@@ -676,6 +676,8 @@ PR 的去識別測試附件保留七天；main 通過全部必要門檻後更新
 
 維護者接線依序為：產生三份 runtime 證據 → `script/test/attach_repo_coverage.ps1` 附加到測試報表 → `script/report/build_portal.ps1` 或 `publish_quality_release.ps1`。三個入口都使用已建置的 `repo_coverage_tool`，由 `-CoverageToolPath` 或 `WINDOWS_SETUP_COVERAGE_TOOL` 指定；缺工具、缺來源、未完整量測或未達精確 80% 都會停止。附加時以 `-SourceRoot` 核對真實 checkout。`build_portal.ps1 -Preview` 僅供本機合成樣本，不得用於正式 Pages 或 Release；本輪 publisher 不接受舊覆蓋率口徑。
 
+正式 Pages 必須提供同一 main run 與 attempt 的原生和容器報告；`build_portal.ps1` 以 `-MainSnapshotPath`、`-ContainerSnapshotPath` 指定兩份摘要，並由 `-BundleToolPath` 或 `WINDOWS_SETUP_REPORT_BUNDLE_TOOL` 指定已建置的報表驗證工具。兩份報告各自保留測試分母；容器覆蓋率未量測，不與原生合併。新版 ZIP 以 `presentation` 標記單頁版面，現行工具也能驗證缺少該欄位的歷史封裝；舊版嚴格驗證工具可能拒絕新版 ZIP，驗證時請使用與 ZIP 同版的工具。
+
 各機續跑及排錯的 `reports` 保留於該機，不納入 Git 或 Pages。`windows.cmd -AfterRestart` 與 `windows.cmd -VerifyOnly` 是產品功能，繼續供設定後續跑及檢查。
 
 ### 測試分層與本機入口

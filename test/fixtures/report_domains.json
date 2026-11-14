@@ -1,0 +1,16 @@
+[
+ {"Name":"Unit.driver_inventory","Domain":"硬體與驅動包","Environment":"native","Status":"Passed"},
+ {"Name":"Integration.drivers_release","Domain":"硬體與驅動包","Environment":"container","Status":"Failed"},
+ {"Name":"Unit.driver_ssh","Domain":"硬體與驅動包","Environment":"native","Status":"NotRun"},
+ {"Name":"Unit.uac_helpers","Domain":"帳號與權限","Environment":"native","Status":"Passed"},
+ {"Name":"Unit.accounts_ssh","Domain":"帳號與權限","Environment":"container","Status":"Passed"},
+ {"Name":"Integration.source_release_coverage","Domain":"版本與來源準備","Environment":"native","Status":"Passed"},
+ {"Name":"Unit.version_checks","Domain":"版本與來源準備","Environment":"container","Status":"Passed"},
+ {"Name":"Unit.one_drive","Domain":"Windows 設定與清理","Environment":"native","Status":"Passed"},
+ {"Name":"Unit.display_helpers","Domain":"Windows 設定與清理","Environment":"container","Status":"Passed"},
+ {"Name":"Unit.ssh_hosts","Domain":"網路與 SSH","Environment":"native","Status":"Passed"},
+ {"Name":"Unit.ssh_missing","Domain":"網路與 SSH","Environment":"container","Status":"NotRun"},
+ {"Name":"Unit.ci_failure_diagnostics","Domain":"測試與交付工具","Environment":"container","Status":"Passed"},
+ {"Name":"Unit.one_note","Domain":"其他檢查","Environment":"native","Status":"Passed"},
+ {"Name":"Unit.unknown_widget","Domain":"其他檢查","Environment":"container","Status":"Passed"}
+]

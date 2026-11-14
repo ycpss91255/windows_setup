@@ -8,13 +8,13 @@ function gh {
  if($argsList[0] -ceq 'api' -and $argsList -contains '--paginate'){return}
  if($argsList[0] -ceq 'api' -and $argsList[1] -like '*/commits/main'){return $sha}
  if($argsList[0] -ceq 'api' -and $argsList[1] -like '*/actions/runs/42/artifacts'){
-  return (@{artifacts=@(@{name=('windows-test-reports-42-'+$global:artifactAttempt);expired=$false})}|ConvertTo-Json -Depth 5)
+  return (@{artifacts=@(@{name=('windows-test-reports-42-'+$global:artifactAttempt);expired=$false},@{name=('docker-test-reports-42-'+$global:artifactAttempt);expired=$false})}|ConvertTo-Json -Depth 5)
  }
  if($argsList[0] -ceq 'api' -and $argsList[1] -like '*/actions/runs/42'){
   return (@{id=$global:runId;head_sha=$global:runSha;head_branch=$global:runBranch;event=$global:runEvent;run_attempt=$global:runAttempt}|ConvertTo-Json -Compress)
  }
  if($argsList[0] -ceq 'run' -and $argsList[1] -ceq 'download'){
-  $dir=$argsList[[Array]::IndexOf($argsList,'--dir')+1];[IO.File]::WriteAllText((Join-Path $dir 'summary.json'),('{"Commit":"'+$sha+'"}'));return
+  $dir=$argsList[[Array]::IndexOf($argsList,'--dir')+1];[IO.File]::WriteAllText((Join-Path $dir 'summary.json'),('{"Commit":"'+$sha+'","RunUrl":"https://github.com/example/repo/actions/runs/42"}'));return
  }
  throw ('unexpected mock gh request')
 }
