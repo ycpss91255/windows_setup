@@ -541,7 +541,7 @@ jobs:
           . .\script\test\ci_tasks.ps1
           $parameters = Get-CIPortalParameters -Repository $env:GH_REPO -OutputDirectory "$env:RUNNER_TEMP\portal-inputs" -EventRef $env:EVENT_REF -RunId $env:CURRENT_RUN -EventName $env:EVENT_NAME -RunAttempt ([int]$env:CURRENT_ATTEMPT)
           $inputs = .\script\report\get_portal_inputs.ps1 @parameters
-          .\script\report\build_portal.ps1 -CatalogPath $inputs.CatalogPath -MainSnapshotPath $inputs.MainSnapshotPath -OutputDirectory "$env:RUNNER_TEMP\quality-portal"
+          .\script\report\build_portal.ps1 -CatalogPath $inputs.CatalogPath -MainSnapshotPath $inputs.MainSnapshotPath -ContainerSnapshotPath $inputs.ContainerSnapshotPath -OutputDirectory "$env:RUNNER_TEMP\quality-portal"
       - name: 保存去識別 portal 供 Linux 部署
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

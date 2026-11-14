@@ -485,6 +485,18 @@ func TestReportBundleExportPreservesValidatedReports(t *testing.T) {
 		}
 		files[f.Name] = b.Bytes()
 	}
+	legacyPage, err := a.ParsePage(files["index.html"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"整體覆蓋率", "100.0%", "1/1 可執行行"} {
+		if !strings.Contains(legacyPage.Visible, want) {
+			t.Errorf("historical coverage missing visible %q", want)
+		}
+	}
+	if strings.Contains(legacyPage.Visible, "PowerShell/C# runtime 覆蓋率") {
+		t.Fatal("schema 1 A overview mislabels historical coverage")
+	}
 	for _, entry := range []struct {
 		prefix string
 		files  map[string][]byte
@@ -626,7 +638,7 @@ func TestReportBundleExportPreservesValidatedReports(t *testing.T) {
 	if err := verifyArchive(out, "1"); err != nil {
 		t.Fatalf("valid archive must verify: %v", err)
 	}
-	for _, kind := range []string{"tampered", "missing", "extra", "traversal", "duplicate", "wrong_attempt", "rehashed_scope", "rehashed_index", "rehashed_summary", "duplicate_manifest_key", "duplicate_manifest_case"} {
+	for _, kind := range []string{"tampered", "missing", "extra", "traversal", "duplicate", "wrong_attempt", "rehashed_scope", "rehashed_index", "rehashed_summary", "duplicate_manifest_key", "duplicate_manifest_case", "presentation_missing", "presentation_null", "presentation_empty", "presentation_type", "presentation_case", "legacy_body"} {
 		t.Run(kind, func(t *testing.T) {
 			if kind == "wrong_attempt" {
 				if err := verifyArchive(out, "2"); err == nil {
@@ -652,6 +664,36 @@ func TestReportBundleExportPreservesValidatedReports(t *testing.T) {
 				json.Unmarshal(changed[changedPath], &raw)
 				raw["Commit"] = strings.Repeat("b", 40)
 				changed[changedPath], _ = json.Marshal(raw)
+			case "presentation_missing", "presentation_null", "presentation_empty", "presentation_type", "presentation_case":
+				var m map[string]any
+				if err := json.Unmarshal(changed["manifest.json"], &m); err != nil {
+					t.Fatal(err)
+				}
+				switch kind {
+				case "presentation_missing":
+					delete(m, "presentation")
+				case "presentation_null":
+					m["presentation"] = nil
+				case "presentation_empty":
+					m["presentation"] = ""
+				case "presentation_type":
+					m["presentation"] = float64(1)
+				case "presentation_case":
+					delete(m, "presentation")
+					m["Presentation"] = overviewPresentation
+				}
+				changed["manifest.json"], _ = json.Marshal(m)
+			case "legacy_body":
+				changedPath = "index.html"
+				native := map[string][]byte{}
+				container := map[string][]byte{}
+				for _, n := range nativeNames {
+					native[n] = changed["native/"+n]
+				}
+				for _, n := range containerNames {
+					container[n] = changed["windows_container/"+n]
+				}
+				changed[changedPath], _ = legacyRootDocuments(version, native, container)
 			case "duplicate_manifest_key":
 				changed["manifest.json"] = bytes.Replace(changed["manifest.json"], []byte("{\n"), []byte("{\n  \"schema_version\": 1,\n"), 1)
 			case "duplicate_manifest_case":
@@ -842,8 +884,24 @@ func TestRuntimeReleaseReportDoesNotRequireGoCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scopeFound := false
+	scopeFound, runtimePageFound := false, false
 	for _, f := range z.File {
+		if f.Name == "index.html" {
+			r, e := f.Open()
+			if e != nil {
+				t.Fatal(e)
+			}
+			data, e := io.ReadAll(r)
+			r.Close()
+			if e != nil {
+				t.Fatal(e)
+			}
+			page, e := a.ParsePage(data)
+			if e != nil {
+				t.Fatal(e)
+			}
+			runtimePageFound = strings.Contains(page.Visible, "PowerShell/C# runtime 覆蓋率") && strings.Contains(page.Visible, "100.0%") && strings.Contains(page.Visible, "1/1 可執行行")
+		}
 		if strings.HasPrefix(f.Name, "native/go_coverage.") {
 			t.Errorf("runtime bundle includes Go coverage: %s", f.Name)
 		}
@@ -859,6 +917,9 @@ func TestRuntimeReleaseReportDoesNotRequireGoCoverage(t *testing.T) {
 			}
 			scopeFound = strings.Contains(string(data), "PowerShell/C# runtime")
 		}
+	}
+	if !runtimePageFound {
+		t.Error("runtime A overview must retain runtime scope and exact counts")
 	}
 	if !scopeFound {
 		t.Error("runtime bundle scope document lacks language scope")

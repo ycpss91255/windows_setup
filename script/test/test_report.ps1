@@ -42,7 +42,7 @@ function Assert-TestReportSnapshot {
  }
 }
 function Write-TestReports {
- param([Parameter(Mandatory=$true)][object[]]$Checks,[Parameter(Mandatory=$true)][string]$OutputDirectory,[string]$Layer='All',[string]$Commit=$env:GITHUB_SHA,[string]$RunUrl,[ValidateSet('Clean','Dirty','Unknown')][string]$SourceState='Unknown',[string]$Version='Unknown',[string]$Environment='Unknown',[ValidateSet('Branch','Release')][string]$RefType='Branch',[string]$RefName='Unknown',[string]$MeasuredAt=([DateTime]::UtcNow.ToString('o')),[string[]]$Changes=@(),$GoCoverage,$RepoCoverage,[ValidateSet(1,2)][int]$SchemaVersion=2,[switch]$OmitGoProfileLink)
+ param([Parameter(Mandatory=$true)][object[]]$Checks,[Parameter(Mandatory=$true)][string]$OutputDirectory,[string]$Layer='All',[string]$Commit=$env:GITHUB_SHA,[string]$RunUrl,[ValidateSet('Clean','Dirty','Unknown')][string]$SourceState='Unknown',[string]$Version='Unknown',[string]$Environment='Unknown',[ValidateSet('Branch','Release')][string]$RefType='Branch',[string]$RefName='Unknown',[string]$MeasuredAt=([DateTime]::UtcNow.ToString('o')),[string[]]$Changes=@(),$GoCoverage,$RepoCoverage,[ValidateSet(1,2)][int]$SchemaVersion=2,[switch]$OmitGoProfileLink,[switch]$LegacyPresentation)
  $encoding=[Text.UTF8Encoding]::new($false)
  New-Item -ItemType Directory -Path $OutputDirectory -Force|Out-Null
  $safe=@(foreach($check in $Checks){
@@ -88,9 +88,16 @@ function Write-TestReports {
   Write-GoCoverageView -Coverage $GoCoverage -RefType $RefType -OutputDirectory $OutputDirectory
  }
  $body+='<h2>測試明細</h2>'
- foreach($check in $display){$body+='<details><summary>'+[Net.WebUtility]::HtmlEncode($check.Layer+' · '+$check.Name+' · '+$check.Status)+'</summary><p>'+[Net.WebUtility]::HtmlEncode([string]$check.DurationSeconds)+' 秒</p><ul>';foreach($assertion in $check.Assertions){$body+='<li>'+$(if($assertion.Passed){'PASS'}else{'FAIL'})+' · '+[Net.WebUtility]::HtmlEncode($assertion.Name)+'</li>'};$body+='</ul></details>'}
+ $orderedDisplay=if($LegacyPresentation){$display}else{@($display|Sort-Object @{Expression={if($_.Status -eq "Failed"){0}elseif($_.Status -eq "NotRun"){1}else{2}}})}
+ foreach($check in $orderedDisplay){$body+='<details><summary>'+[Net.WebUtility]::HtmlEncode($check.Layer+' · '+$check.Name+' · '+$check.Status)+'</summary><p>'+[Net.WebUtility]::HtmlEncode([string]$check.DurationSeconds)+' 秒</p><ul>';foreach($assertion in $check.Assertions){$body+='<li>'+$(if($assertion.Passed){'PASS'}else{'FAIL'})+' · '+[Net.WebUtility]::HtmlEncode($assertion.Name)+'</li>'};$body+='</ul></details>'}
  $body+='<details><summary>環境與來源</summary><p>'+[Net.WebUtility]::HtmlEncode($environmentText+' / '+$sourceText)+'</p></details>'
+ if($LegacyPresentation){
  $html='<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Windows 測試結果</title><style>body{font:16px/1.6 system-ui;max-width:960px;margin:32px auto;padding:0 20px;color:#17202a;background:#f7f9fb}details{background:white;padding:16px;margin:16px 0;border:1px solid #dde3ea;border-radius:8px}li{margin:5px 0}code{overflow-wrap:anywhere}</style><body>'+$body+'</body></html>'
+ }else{
+  $templatePath=Join-Path $PSScriptRoot 'report_bundle_tool/overview.html'
+  $template=[IO.File]::ReadAllText($templatePath,[Text.Encoding]::UTF8).TrimStart([char]0xfeff)
+  $html=$template.Replace('{{TITLE}}','Windows 測試結果').Replace('{{BODY}}',$body)
+ }
  [IO.File]::WriteAllText((Join-Path $OutputDirectory 'index.html'),$html,$encoding)
  $xml=New-Object Xml.XmlDocument;$tests=$xml.CreateElement('testsuites');[void]$xml.AppendChild($tests)
  foreach($check in $safe){
