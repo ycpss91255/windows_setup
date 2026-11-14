@@ -9,7 +9,47 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	c "windows_setup/script/test/repo_coverage"
 )
+
+func TestRuntimeBundleReceiptWithoutGoProfile(t *testing.T) {
+	tag, sha, run := "v0.2.5", strings.Repeat("a", 40), "https://github.com/example/repo/actions/runs/3"
+	archive := filepath.Join(t.TempDir(), "report.zip")
+	payload := []byte("archive")
+	if err := os.WriteFile(archive, payload, 0600); err != nil {
+		t.Fatal(err)
+	}
+	a := assetFromBytes("windows_setup_report_"+tag+".zip", payload)
+	meta, _ := json.Marshal(map[string]any{"tag_name": tag, "draft": false, "immutable": true, "assets": []releaseAsset{a}})
+	old := runReportVerifier
+	defer func() { runReportVerifier = old }()
+	scope := c.RuntimeScope
+	runReportVerifier = func(_ string, args ...string) error {
+		out := ""
+		for i := range args {
+			if args[i] == "--output-dir" {
+				out = args[i+1]
+			}
+		}
+		if err := os.MkdirAll(filepath.Join(out, "native"), 0700); err != nil {
+			return err
+		}
+		summary := []byte("summary")
+		if err := os.WriteFile(filepath.Join(out, "native", "summary.json"), summary, 0600); err != nil {
+			return err
+		}
+		r := map[string]any{"archive_sha256": strings.TrimPrefix(a.Digest, "sha256:"), "archive_size": a.Size, "version": tag, "commit": sha, "run_url": run, "run_attempt": 1, "summary_sha256": strings.TrimPrefix(assetFromBytes("", summary).Digest, "sha256:"), "context_origin": "explicit", "coverage_scope": scope}
+		b, _ := json.Marshal(r)
+		return os.WriteFile(filepath.Join(out, "verified.json"), b, 0600)
+	}
+	if _, err := prepareReleaseBundle(meta, tag, sha, run, 1, "trusted", archive); err != nil {
+		t.Fatalf("runtime receipt rejected: %v", err)
+	}
+	scope = "unknown"
+	if _, err := prepareReleaseBundle(meta, tag, sha, run, 1, "trusted", archive); err == nil {
+		t.Fatal("unknown scope accepted")
+	}
+}
 
 func Test報表封裝驗證與外層身分(t *testing.T) {
 	tag, sha, run := "v0.2.5", strings.Repeat("a", 40), "https://github.com/example/repo/actions/runs/3"

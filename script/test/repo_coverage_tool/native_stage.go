@@ -37,6 +37,7 @@ type nativeStageMetadata struct {
 type nativeStageOptions struct {
 	source, report, goDir, input, output, commit, run string
 	attempt                                           int
+	runtime                                           bool
 }
 
 var nativeReportFiles = []string{"coverage.svg", "index.html", "integration.svg", "junit.xml", "summary.json", "summary.md", "unit.svg"}
@@ -50,6 +51,7 @@ func nativeStage(command string, args []string, out io.Writer) error {
 	f.StringVar(&o.commit, "expected-sha", "", "same source commit")
 	f.StringVar(&o.run, "expected-run-url", "", "same workflow run")
 	f.IntVar(&o.attempt, "run-attempt", 0, "same workflow attempt")
+	f.BoolVar(&o.runtime, "runtime", false, "native stage without Go coverage")
 	f.StringVar(&o.output, "output-dir", "", "fresh external output")
 	if command == "native-stage-pack" {
 		f.StringVar(&o.report, "report-dir", "", "fresh native All report")
@@ -59,6 +61,9 @@ func nativeStage(command string, args []string, out io.Writer) error {
 	}
 	if err := f.Parse(args); err != nil {
 		return err
+	}
+	if o.runtime && o.goDir != "" {
+		return fmt.Errorf("runtime stage does not accept Go coverage input")
 	}
 	if f.NArg() != 0 || o.source == "" || o.output == "" || o.attempt < 1 || !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(o.commit) || !regexp.MustCompile(`^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/runs/[1-9][0-9]*$`).MatchString(o.run) {
 		return fmt.Errorf("complete native stage source and workflow identity are required")
@@ -78,12 +83,23 @@ func nativeStage(command string, args []string, out io.Writer) error {
 	}
 	data := map[string][]byte{}
 	metadata := nativeStageMetadata{SchemaVersion: 1, Kind: "NativeAndGoStage", Commit: o.commit, RunUrl: o.run, RunAttempt: o.attempt}
+	if o.runtime {
+		metadata.SchemaVersion = 2
+		metadata.Kind = "NativeRuntimeStage"
+	}
 	inputs := []string{source}
 	if command == "native-stage-pack" {
-		for _, group := range []struct {
+		groups := []struct {
 			path, prefix string
 			files        []string
-		}{{o.report, "report", nativeReportFiles}, {o.goDir, "go", nativeGoFiles}} {
+		}{{o.report, "report", nativeReportFiles}}
+		if !o.runtime {
+			groups = append(groups, struct {
+				path, prefix string
+				files        []string
+			}{o.goDir, "go", nativeGoFiles})
+		}
+		for _, group := range groups {
 			dir, e := nativeStageDirectory(group.path)
 			if e != nil {
 				return e
@@ -103,11 +119,15 @@ func nativeStage(command string, args []string, out io.Writer) error {
 		}
 		inputs = append(inputs, input)
 		entries, e := os.ReadDir(input)
-		if e != nil || len(entries) != 3 {
+		count := 3
+		if o.runtime {
+			count = 2
+		}
+		if e != nil || len(entries) != count {
 			return fmt.Errorf("native stage must contain only its exact three roots")
 		}
 		for _, entry := range entries {
-			if entry.Name() != "stage.json" && entry.Name() != "report" && entry.Name() != "go" {
+			if entry.Name() != "stage.json" && entry.Name() != "report" && !(!o.runtime && entry.Name() == "go") {
 				return fmt.Errorf("unknown native stage entry")
 			}
 		}
@@ -119,13 +139,24 @@ func nativeStage(command string, args []string, out io.Writer) error {
 			return fmt.Errorf("invalid typed native stage metadata")
 		}
 		canonical, _ := json.MarshalIndent(metadata, "", "  ")
-		if !bytes.Equal(raw, canonical) || metadata.SchemaVersion != 1 || metadata.Kind != "NativeAndGoStage" || metadata.Complete || metadata.Publishable || metadata.Commit != o.commit || metadata.RunUrl != o.run || metadata.RunAttempt != o.attempt {
+		version, kind := 1, "NativeAndGoStage"
+		if o.runtime {
+			version, kind = 2, "NativeRuntimeStage"
+		}
+		if !bytes.Equal(raw, canonical) || metadata.SchemaVersion != version || metadata.Kind != kind || metadata.Complete || metadata.Publishable || metadata.Commit != o.commit || metadata.RunUrl != o.run || metadata.RunAttempt != o.attempt {
 			return fmt.Errorf("native stage identity, canonical fields or partial state differs")
 		}
-		for _, group := range []struct {
+		groups := []struct {
 			prefix string
 			files  []string
-		}{{"report", nativeReportFiles}, {"go", nativeGoFiles}} {
+		}{{"report", nativeReportFiles}}
+		if !o.runtime {
+			groups = append(groups, struct {
+				prefix string
+				files  []string
+			}{"go", nativeGoFiles})
+		}
+		for _, group := range groups {
 			dir, e := nativeStageDirectory(filepath.Join(input, group.prefix))
 			if e != nil {
 				return e
@@ -155,7 +186,11 @@ func nativeStage(command string, args []string, out io.Writer) error {
 	if err = os.Mkdir(output, 0700); err != nil {
 		return fmt.Errorf("cannot create fresh native stage output")
 	}
-	for _, group := range []string{"report", "go"} {
+	groups := []string{"report"}
+	if !o.runtime {
+		groups = append(groups, "go")
+	}
+	for _, group := range groups {
 		if err = os.Mkdir(filepath.Join(output, group), 0700); err != nil {
 			return fmt.Errorf("cannot create native stage group")
 		}
@@ -177,7 +212,11 @@ func nativeStage(command string, args []string, out io.Writer) error {
 			return fmt.Errorf("cannot write native stage metadata")
 		}
 	}
-	fmt.Fprintf(out, "Native All and Go stage verified: checks=%d assertions=%d; whole coverage incomplete, not publishable.\n", len(r.Checks), r.Totals.AssertionsExecuted)
+	if o.runtime {
+		fmt.Fprintf(out, "Native All runtime stage verified: checks=%d assertions=%d; coverage incomplete, not publishable.\n", len(r.Checks), r.Totals.AssertionsExecuted)
+	} else {
+		fmt.Fprintf(out, "Native All and Go stage verified: checks=%d assertions=%d; whole coverage incomplete, not publishable.\n", len(r.Checks), r.Totals.AssertionsExecuted)
+	}
 	return nil
 }
 
@@ -314,6 +353,9 @@ func validateNativeStageEvidence(o nativeStageOptions, data map[string][]byte) (
 			return r, fmt.Errorf("native source roster contains missing, duplicate or unsuccessful suite")
 		}
 		delete(expected, check.Name)
+	}
+	if o.runtime {
+		return r, nil
 	}
 	files, err := a.OwnedGoFiles(o.source)
 	if err != nil {

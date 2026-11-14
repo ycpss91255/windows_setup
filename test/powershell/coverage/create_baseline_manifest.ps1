@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-param([Parameter(Mandatory=$true)][string]$SourceRoot,[Parameter(Mandatory=$true)][string]$OutputPath)
+param([Parameter(Mandatory=$true)][string]$SourceRoot,[Parameter(Mandatory=$true)][string]$OutputPath,[switch]$Runtime)
 $ErrorActionPreference='Stop'
 $source=(Resolve-Path -LiteralPath $SourceRoot).Path
 if(Test-Path -LiteralPath $OutputPath){throw '基線清單輸出已存在。'}
@@ -12,9 +12,10 @@ $tests=@(foreach($layer in @('unit','integration')){
 if(-not $tests.Count){throw '安全測試清單為空。'}
 [Array]::Sort($tests,[StringComparer]::Ordinal)
 foreach($test in $tests){if(-not(Test-Path -LiteralPath (Join-Path $source $test) -PathType Leaf)){throw ('安全測試遺失：'+$test)}}
-$tracked=@(& git -C $source ls-files '*.ps1')
+$tracked=@(& git -C $source ls-files '*.ps1' '*.psm1')
 if($LASTEXITCODE -ne 0){throw '無法取得版本控制來源清單。'}
-$sources=@($tracked|Where-Object {$_ -match '^(core|modules|script)/' -and $_ -notmatch '^modules/debloat/win11debloat/'}|Sort-Object)
+$sourcePattern=if($Runtime){'^(core|modules)/'}else{'^(core|modules|script)/'}
+$sources=@($tracked|Where-Object {$_ -match $sourcePattern -and $_ -notmatch '^modules/debloat/win11debloat/'}|Sort-Object)
 if(-not $sources.Count){throw '正式 PowerShell 來源清單為空。'}
 [Array]::Sort($sources,[StringComparer]::Ordinal)
 $testEngines=[ordered]@{}

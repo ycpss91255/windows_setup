@@ -7,13 +7,11 @@ if(-not $DriverAssetManifestPath){$DriverAssetManifestPath=Join-Path $PSScriptRo
 . (Join-Path $PSScriptRoot '../release/driver_release_library.ps1')
 $snapshot=Get-Content (Join-Path $PublicDirectory 'summary.json') -Raw -Encoding UTF8|ConvertFrom-Json
 Assert-TestReportSnapshot -Report $snapshot -Release
-if($snapshot.SchemaVersion -ne 2){throw '本輪發布只接受schema2完整整體覆蓋率，legacy僅供歷史讀取。'}
+if($snapshot.SchemaVersion -ne 2 -or -not $snapshot.PSObject.Properties['RepoCoverage'] -or $snapshot.RepoCoverage.SchemaVersion -ne 2 -or $snapshot.RepoCoverage.Scope -cne 'core-modules-powershell-and-modules-native-csharp' -or $snapshot.RepoCoverage.Metric -cne 'runtime-powershell-csharp-executable-lines-v2'){throw '本輪發布只接受 PowerShell/C# runtime 覆蓋率；舊口徑僅供歷史讀取。'}
 Assert-RepoCoverageArtifacts -Report $snapshot -Directory $PublicDirectory -CoverageToolPath $CoverageToolPath -RequireComplete
 if($snapshot.Commit -cne $Commit -or $snapshot.Version -cne $Version -or $snapshot.RefName -cne $Version){throw '發布版本與測試來源不一致。'}
-if(-not $snapshot.PSObject.Properties['GoCoverage']){throw '本輪發布需要全部自有 Go 工具的真實量測與原始 profile。'}
-Assert-GoCoverageProfile -Coverage $snapshot.GoCoverage -Directory $PublicDirectory
-if($snapshot.GoCoverage.Covered*100 -lt $snapshot.GoCoverage.TotalStatements*80){throw '本輪發布的 Go 覆蓋率不得低於精確八成。'}
-$files=@(Get-TestReportArtifactNames $snapshot.SchemaVersion -IncludeGoProfile)
+if($snapshot.PSObject.Properties['GoCoverage']){throw 'runtime 報告不可混入舊 Go 覆蓋率證據。'}
+$files=@(Get-TestReportArtifactNames $snapshot.SchemaVersion)
 $hashes=@(foreach($name in $files){[ordered]@{Name=$name;SHA256=(Get-FileHash -LiteralPath (Join-Path $PublicDirectory $name)).Hash.ToLowerInvariant()}})
 $quality=Join-Path $PublicDirectory 'quality.json';Copy-Item -LiteralPath (Join-Path $PublicDirectory 'summary.json') -Destination $quality
 $manifest=[ordered]@{SchemaVersion=$snapshot.SchemaVersion;Version=$Version;Commit=$Commit;MeasuredAt=$snapshot.MeasuredAt;RunUrl=$snapshot.RunUrl;SnapshotSHA256=(Get-FileHash $quality).Hash.ToLowerInvariant();Files=$hashes}
@@ -55,7 +53,7 @@ try {
  if($LASTEXITCODE -ne 0){throw '報表封裝驗證失敗。'}
  $receipt=Get-Content -LiteralPath (Join-Path $verified 'verified.json') -Raw -Encoding UTF8|ConvertFrom-Json
  if($receipt.archive_sha256 -isnot [string] -or $receipt.archive_sha256 -cnotmatch '^[a-f0-9]{64}$' -or ($receipt.archive_size -isnot [int] -and $receipt.archive_size -isnot [long]) -or $receipt.archive_size -le 0){throw '報表驗證收據無效。'}
- $nativeNames=@('index.html','summary.json','summary.md','junit.xml','unit.svg','integration.svg','coverage.svg','repo_coverage.json','coverage_inventory.json','coverage.xml','go_coverage.json','go_coverage.out','go_coverage.svg')
+ $nativeNames=@('index.html','summary.json','summary.md','junit.xml','unit.svg','integration.svg','coverage.svg','repo_coverage.json','coverage_inventory.json','coverage.xml')
  $containerNames=@('index.html','summary.json','summary.md','junit.xml','unit.svg','integration.svg','coverage.svg')
  foreach($pair in @(@{Input=$PublicDirectory;Verified='native';Names=$nativeNames},@{Input=$ContainerDirectory;Verified='windows_container';Names=$containerNames})){
   if(-not $pair.Input){throw '缺少同次報表目錄。'}

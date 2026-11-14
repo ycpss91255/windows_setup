@@ -1,11 +1,11 @@
 ﻿#Requires -Version 5.1
-param([string]$SourceRoot,[string]$OutputDirectory)
+param([string]$SourceRoot,[string]$OutputDirectory,[switch]$Runtime)
 # Runner-local maintenance producer. Never applies display, desktop, hotkey or provisioning settings.
 function Get-ManagedCoverageToolPin {
  return [pscustomobject]@{Id='Microsoft.dotnet-coverage';Version='17.14.1';PackageSHA512='hgzaG+c7LtKup6HZixvXtn3l4Pa8VK23bM9vLHveD3Iq2XlzLu7vqMZwtVjQdsof83wx5OzY0tpDh3+YRdOVjA==';SDK='10.0.300';CompilerSHA256='5d03664b92a3c91bafb63466d1796d1aa863a5cbab3d6b79a30ba1b13d192cd2'}
 }
 function Get-ManagedSourceInventory {
- param([Parameter(Mandatory=$true)][string]$SourceRoot)
+ param([Parameter(Mandatory=$true)][string]$SourceRoot,[switch]$Runtime)
  $root=[IO.Path]::GetFullPath($SourceRoot).TrimEnd('\')
  foreach($tree in @('core','modules','script')){
   $directory=Join-Path $root $tree
@@ -13,6 +13,7 @@ function Get-ManagedSourceInventory {
   foreach($file in @(Get-ChildItem -LiteralPath $directory -Recurse -File -Filter '*.cs'|Sort-Object FullName)){
    $relative=$file.FullName.Substring($root.Length+1).Replace('\','/')
    if($relative.StartsWith('modules/debloat/win11debloat/',[StringComparison]::OrdinalIgnoreCase)){continue}
+   if($Runtime -and $relative -cnotmatch '^modules/[^/]+/native/[^/]+\.cs$'){continue}
    if($file.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Managed source cannot be a reparse point.'}
    [pscustomobject]@{Path=$relative;SHA256=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()}
   }
@@ -70,9 +71,9 @@ function Get-ManagedArtifactReference {
  return [pscustomobject]@{Path=$full.Substring($root.Length).Replace('\','/');SHA256=(Get-FileHash -LiteralPath $full -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()}
 }
 function Invoke-ManagedCoverage {
- param([Parameter(Mandatory=$true)][string]$SourceRoot,[Parameter(Mandatory=$true)][string]$OutputDirectory)
+ param([Parameter(Mandatory=$true)][string]$SourceRoot,[Parameter(Mandatory=$true)][string]$OutputDirectory,[switch]$Runtime)
  $ErrorActionPreference='Stop';$root=[IO.Path]::GetFullPath($SourceRoot).TrimEnd('\')
- $sources=@(Get-ManagedSourceInventory -SourceRoot $root)
+ $sources=@(Get-ManagedSourceInventory -SourceRoot $root -Runtime:$Runtime)
  if($sources.Count -eq 0){throw 'Managed production source inventory is empty.'}
  $output=Assert-ManagedOutputLocation -SourceRoot $root -OutputDirectory $OutputDirectory
  $dotnet=(Get-Command dotnet -ErrorAction Stop).Source;$pwsh=(Get-Command pwsh.exe -ErrorAction Stop).Source
@@ -91,7 +92,9 @@ function Invoke-ManagedCoverage {
   $base=@($compiler,'/nologo','/noconfig','/nostdlib+','/langversion:5','/debug:portable','/optimize-')+@($referenceFiles|ForEach-Object {'/reference:'+(Join-Path $refs $_)})
   $compile=$base+@('/target:library',('/out:'+$assembly),('/pdb:'+$pdb))+@($sources|ForEach-Object {Join-Path $root $_.Path})
   Invoke-ManagedNative -FilePath $dotnet -Arguments $compile -LogPath (Join-Path $output 'compile_production.log')
-  Invoke-ManagedNative -FilePath $dotnet -Arguments ($base+@('/target:exe',('/out:'+$exe),('/reference:'+$assembly),$harness)) -LogPath (Join-Path $output 'compile_tests.log')
+  $testSources=@($harness)
+  if($Runtime){$testSources+=Join-Path $root 'script/test/native/oobe_wim_reader.cs'}
+  Invoke-ManagedNative -FilePath $dotnet -Arguments ($base+@('/target:exe',('/out:'+$exe),('/reference:'+$assembly))+$testSources) -LogPath (Join-Path $output 'compile_tests.log')
   $catalog=Join-Path $output 'catalog.json'
   Invoke-ManagedNative -FilePath $pwsh -Arguments @('-NoProfile','-File',(Join-Path $root 'script/test/managed_catalog.ps1'),'-SourceRoot',$root,'-AssemblyPath',$assembly,'-PDBPath',$pdb,'-OutputPath',$catalog) -LogPath (Join-Path $output 'catalog.log')
   $settings=Join-Path $output 'coverage.config'
@@ -107,7 +110,7 @@ function Invoke-ManagedCoverage {
   $merged=Join-Path $output 'merged.coverage';$mergedXml=Join-Path $output 'merged.xml'
   Invoke-ManagedNative -FilePath $tool -Arguments (@('merge')+@($records|ForEach-Object {Join-Path $output $_.BinaryPath})+@('-f','coverage','-o',$merged)) -LogPath (Join-Path $output 'merge_binary.log')
   Invoke-ManagedNative -FilePath $tool -Arguments @('merge',$merged,'-f','xml','-o',$mergedXml) -LogPath (Join-Path $output 'merge_export.log')
-  $after=@(Get-ManagedSourceInventory $root)
+  $after=@(Get-ManagedSourceInventory -SourceRoot $root -Runtime:$Runtime)
   if(($after|ConvertTo-Json -Compress) -cne ($sources|ConvertTo-Json -Compress)){throw 'Managed source inventory changed while collecting evidence.'}
   $a=Get-ManagedArtifactReference $output $assembly;$p=Get-ManagedArtifactReference $output $pdb;$c=Get-ManagedArtifactReference $output $catalog;$m=Get-ManagedArtifactReference $output $merged;$x=Get-ManagedArtifactReference $output $mergedXml;$pin=Get-ManagedCoverageToolPin
   $proof=[pscustomobject][ordered]@{SchemaVersion=1;Metric='complete-executable-lines-v1';SourceRoot=$root;Tool=[pscustomobject]@{Id=$pin.Id;Version=$pin.Version;PackageSHA512=$pin.PackageSHA512};Sources=$sources;AssemblyPath=$a.Path;AssemblySHA256=$a.SHA256;PDBPath=$p.Path;PDBSHA256=$p.SHA256;CatalogPath=$c.Path;CatalogSHA256=$c.SHA256;Shards=[object[]]$records.ToArray();MergedBinaryPath=$m.Path;MergedBinarySHA256=$m.SHA256;MergedXmlPath=$x.Path;MergedXmlSHA256=$x.SHA256;MergeNative=$true}
@@ -119,5 +122,5 @@ function Invoke-ManagedCoverage {
 if($MyInvocation.InvocationName -ne '.'){
  if(-not $SourceRoot){$SourceRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))}
  if(-not $OutputDirectory){throw 'An external, new OutputDirectory is required.'}
- Invoke-ManagedCoverage -SourceRoot $SourceRoot -OutputDirectory $OutputDirectory|Out-Null
+ Invoke-ManagedCoverage -SourceRoot $SourceRoot -OutputDirectory $OutputDirectory -Runtime:$Runtime|Out-Null
 }

@@ -7,7 +7,7 @@ function Refuse([scriptblock]$Action,[string]$Message){$failure=$null;try{& $Act
 $fixture=Join-Path $env:TEMP ('docker_receipt_'+[guid]::NewGuid().ToString('N'))
 $source=Join-Path $fixture 'source'
 [void][IO.Directory]::CreateDirectory((Join-Path $source '.git'))
-foreach($file in @('dockerfile/windows_tests.dockerfile','script/docker/download_library.ps1','script/docker/install_min_git.ps1','script/docker/install_go.ps1','script/docker/install_managed_tools.ps1','script/docker/container_test.ps1','script/test/ci_tasks.ps1','.dockerignore','compose.yaml')){
+foreach($file in @('dockerfile/windows_tests.dockerfile','script/docker/download_library.ps1','script/docker/install_min_git.ps1','script/docker/install_go.ps1','script/docker/install_managed_tools.ps1','script/docker/container_test.ps1','script/docker/container_health.ps1','script/test/ci_tasks.ps1','.dockerignore','compose.yaml')){
  $target=Join-Path $source $file;[void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target));Copy-Item -LiteralPath (Join-Path $root $file) -Destination $target
 }
 $context=Get-ContainerContext $source (Join-Path $fixture 'reports')

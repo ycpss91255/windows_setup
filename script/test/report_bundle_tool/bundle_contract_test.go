@@ -174,11 +174,14 @@ func TestReportBundleExportPreservesValidatedReports(t *testing.T) {
 	}
 	out := filepath.Join(root, "windows_setup_report_v0.1.0.zip")
 	cmd := exec.Command("go", "run", ".", "export", "--native-dir", nativeDir, "--container-dir", containerDir, "--source-root", source, "--version", version, "--commit", sha, "--run-url", runURL, "--run-attempt", "1", "--output", out)
-	if data, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("valid same-run reports must export: %v\n%s", err, data)
+	if data, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("current exporter accepted legacy coverage: %s", data)
 	}
 	optionsFor := func(nativePath, containerPath, outputPath string, attempt int) options {
 		return options{native: nativePath, container: containerPath, source: source, version: version, commit: sha, run: runURL, attempt: attempt, output: outputPath}
+	}
+	if err := export(optionsFor(nativeDir, containerDir, out, 1)); err != nil {
+		t.Fatalf("historical fixture export: %v", err)
 	}
 	t.Run("reject_expanded_archive_over_limit", func(t *testing.T) {
 		oldLimit := maxArchive
@@ -385,10 +388,10 @@ func TestReportBundleExportPreservesValidatedReports(t *testing.T) {
 		}
 		output := filepath.Join(t.TempDir(), "windows_setup_report_v0.1.0.zip")
 		os.Args = []string{"tool", "export", "--native-dir", nativeDir, "--container-dir", containerDir, "--source-root", source, "--version", version, "--commit", sha, "--run-url", runURL, "--run-attempt", "1", "--output", output}
-		if e := run(); e != nil {
-			t.Fatal(e)
+		if e := run(); e == nil {
+			t.Fatal("current command accepted historical scope")
 		}
-		os.Args = []string{"tool", "verify", "--archive", output, "--source-root", source, "--version", version, "--commit", sha, "--run-url", runURL, "--run-attempt", "1"}
+		os.Args = []string{"tool", "verify", "--archive", inProcess, "--source-root", source, "--version", version, "--commit", sha, "--run-url", runURL, "--run-attempt", "1"}
 		if e := run(); e != nil {
 			t.Fatal(e)
 		}
@@ -721,6 +724,176 @@ func TestReportBundleExportPreservesValidatedReports(t *testing.T) {
 				t.Fatalf("historical mode accepted invalid archive: %s", kind)
 			}
 		})
+	}
+}
+
+func TestRuntimeReleaseReportDoesNotRequireGoCoverage(t *testing.T) {
+	base := t.TempDir()
+	if requested := os.Getenv("WINDOWS_SETUP_RUNTIME_BUNDLE_FIXTURE_DIR"); requested != "" {
+		if !filepath.IsAbs(requested) {
+			t.Fatal("fixture destination must be absolute")
+		}
+		parent, err := canonicalSafeParent(filepath.Dir(filepath.Clean(requested)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		base = filepath.Join(parent, filepath.Base(filepath.Clean(requested)))
+		if err := os.Mkdir(base, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	source := filepath.Join(base, "source")
+	if err := os.Mkdir(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	original, oldSHA, runURL := syntheticNativeReport(t, source)
+	ps := filepath.Join(source, "core", "sample.ps1")
+	if err := os.MkdirAll(filepath.Dir(ps), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ps, []byte("Write-Output 'fixture'\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "core/sample.ps1"}, {"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "runtime fixture"}} {
+		if out, err := exec.Command("git", append([]string{"-C", source}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("fixture git: %s %v", out, err)
+		}
+	}
+	commit, err := exec.Command("git", "-C", source, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.TrimSpace(string(commit))
+	inv, err := c.ScanRuntimeInventory(source)
+	if err != nil || len(inv.Sources) != 1 {
+		t.Fatalf("runtime inventory: %+v %v", inv, err)
+	}
+	inv.Sources[0].ExpectedLines = []int{1}
+	art, err := c.CreateRuntimeEvidence(inv, []c.Report{{SchemaVersion: 1, Metric: c.Metric, Files: map[string]map[int]bool{"core/sample.ps1": {1: true}}}}, c.Identity{Commit: sha, RunUrl: runURL, MeasuredAt: "2026-01-01T00:00:00Z", SourceState: "Clean"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	native := map[string][]byte{}
+	for name, data := range original {
+		if strings.HasPrefix(name, "main/") {
+			native[strings.TrimPrefix(name, "main/")] = bytes.ReplaceAll(data, []byte(oldSHA), []byte(sha))
+		}
+	}
+	var summary map[string]any
+	if err = json.Unmarshal(native["summary.json"], &summary); err != nil {
+		t.Fatal(err)
+	}
+	summary["RepoCoverage"], summary["RefType"], summary["RefName"], summary["Version"], summary["Environment"] = json.RawMessage(art.Summary), "Release", "v0.1.0", "v0.1.0", "Windows synthetic native fixture"
+	summary["Changes"] = []string{"Synthetic fixture"}
+	for _, check := range summary["Checks"].([]any) {
+		check.(map[string]any)["ExitCode"] = 0
+	}
+	native["summary.json"], _ = json.Marshal(summary)
+	native["repo_coverage.json"], native["coverage_inventory.json"], native["coverage.xml"] = art.Summary, art.Inventory, art.XML
+	for _, name := range []string{"unit", "integration", "coverage"} {
+		label, value, color := name+" release", "passed", "#4c1"
+		if name == "coverage" {
+			label, value, color = "runtime PowerShell/C#", "100.0%", "#007ec6"
+		}
+		l, q := len(label)*7+12, len(value)*7+12
+		aria := ""
+		if name == "coverage" {
+			aria = fmt.Sprintf(` aria-label="%s release: %s"><title>%s release: %s</title`, label, value, label, value)
+		}
+		if name == "coverage" {
+			native[name+".svg"] = []byte(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" height="20" width="%d"%s><rect width="%d" fill="#555"/><rect width="%d" fill="%s"/><g font-size="11"><text>%s</text><text>%s</text></g></svg>`, l+q, aria, l, q, color, label, value))
+		} else {
+			native[name+".svg"] = []byte(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" height="20" width="%d"><rect width="%d" fill="#555"/><rect width="%d" fill="%s"/><g font-size="11"><text>%s</text><text>%s</text></g></svg>`, l+q, l, q, color, label, value))
+		}
+	}
+	container := map[string][]byte{}
+	for _, n := range containerNames {
+		container[n] = append([]byte(nil), native[n]...)
+	}
+	delete(summary, "RepoCoverage")
+	summary["Coverage"] = "NotMeasured"
+	summary["Environment"] = "Windows container / Windows synthetic fixture"
+	container["summary.json"], _ = json.Marshal(summary)
+	label, value := "coverage release", "not measured"
+	l, q := len(label)*7+12, len(value)*7+12
+	container["coverage.svg"] = []byte(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" height="20" width="%d"><rect width="%d" fill="#555"/><rect width="%d" fill="#9f9f9f"/><g font-size="11"><text>%s</text><text>%s</text></g></svg>`, l+q, l, q, label, value))
+	if err := validateReports(options{source: source, version: "v0.1.0", commit: sha, run: runURL, attempt: 1}, native, container); err != nil {
+		t.Fatalf("runtime release without Go coverage rejected: %v", err)
+	}
+	nativeDir, containerDir := filepath.Join(base, "windows-test-reports-1-1"), filepath.Join(base, "docker-test-reports-1-1")
+	for _, pair := range []struct {
+		dir   string
+		files map[string][]byte
+	}{{nativeDir, native}, {containerDir, container}} {
+		if err := os.Mkdir(pair.dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		for name, data := range pair.files {
+			if err := os.WriteFile(filepath.Join(pair.dir, name), data, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	archive := filepath.Join(base, "windows_setup_report_v0.1.0.zip")
+	if err := exportWithScope(options{native: nativeDir, container: containerDir, source: source, version: "v0.1.0", commit: sha, run: runURL, attempt: 1, output: archive}, true); err != nil {
+		t.Fatalf("runtime bundle export: %v", err)
+	}
+	z, err := zip.OpenReader(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scopeFound := false
+	for _, f := range z.File {
+		if strings.HasPrefix(f.Name, "native/go_coverage.") {
+			t.Errorf("runtime bundle includes Go coverage: %s", f.Name)
+		}
+		if f.Name == "report_scope.md" {
+			r, e := f.Open()
+			if e != nil {
+				t.Fatal(e)
+			}
+			data, e := io.ReadAll(r)
+			r.Close()
+			if e != nil {
+				t.Fatal(e)
+			}
+			scopeFound = strings.Contains(string(data), "PowerShell/C# runtime")
+		}
+	}
+	if !scopeFound {
+		t.Error("runtime bundle scope document lacks language scope")
+	}
+	if err = z.Close(); err != nil {
+		t.Fatal(err)
+	}
+	verified := filepath.Join(t.TempDir(), "verified")
+	if err := verify([]string{"--archive", archive, "--source-root", source, "--version", "v0.1.0", "--commit", sha, "--run-url", runURL, "--run-attempt", "1", "--output-dir", verified}); err != nil {
+		t.Fatalf("runtime bundle verify: %v", err)
+	}
+	receipt, err := os.ReadFile(filepath.Join(verified, "verified.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(receipt, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if fields["coverage_scope"] != c.RuntimeScope || fields["profile_sha256"] != nil {
+		t.Fatalf("runtime receipt must identify its scope and omit Go profile: %s", receipt)
+	}
+	if os.Getenv("WINDOWS_SETUP_RUNTIME_BUNDLE_FIXTURE_DIR") != "" {
+		data, err := os.ReadFile(archive)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hash := sha256.Sum256(data)
+		metadata, err := json.Marshal(map[string]any{"kind": "Synthetic", "version": "v0.1.0", "commit": sha, "run_url": runURL, "run_attempt": 1, "source": "source", "archive": filepath.Base(archive), "sha256": fmt.Sprintf("%x", hash), "size": len(data)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(base, "fixture.json"), metadata, 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 func TestOutputParentComparisonRespectsPlatform(t *testing.T) {

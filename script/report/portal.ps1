@@ -60,11 +60,17 @@ function Test-PortalZipEvidence {
   if($metadata.context_origin -cne 'immutable_archive_manifest' -or $metadata.version -cne $Entry.Version -or $metadata.commit -cne $Entry.Commit -or ('sha256:'+$metadata.archive_sha256) -cne $Entry.ArchiveDigest -or $metadata.archive_size -ne $Entry.ArchiveSize){throw '驗證結果與 Release 不符。'}
   if($metadata.run_url -cnotmatch ('^https://github\.com/'+[regex]::Escape($Entry.Repository)+'/actions/runs/[1-9][0-9]*$')){throw '執行紀錄不屬於可信儲存庫。'}
   $native=Join-Path $output 'native';$summary=Join-Path $native 'summary.json'
-  if((Get-FileHash -LiteralPath $summary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $metadata.summary_sha256 -or (Get-FileHash -LiteralPath (Join-Path $native 'go_coverage.out') -Algorithm SHA256).Hash.ToLowerInvariant() -cne $metadata.profile_sha256){throw '驗證輸出摘要不符。'}
+  if((Get-FileHash -LiteralPath $summary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $metadata.summary_sha256){throw '驗證輸出摘要不符。'}
   $snapshot=Get-Content -LiteralPath $summary -Raw -Encoding UTF8|ConvertFrom-Json
   Assert-TestReportSnapshot -Report $snapshot -Release
-  $files=@(Get-TestReportArtifactNames $snapshot.SchemaVersion -IncludeGoProfile|ForEach-Object {[pscustomobject]@{Name=$_}})
-  return [pscustomobject]@{Snapshot=$snapshot;Manifest=[pscustomobject]@{Files=$files};HasGoProfile=$true;AssetDirectory=$native;SnapshotPath=$summary;SnapshotDigest=('sha256:'+$metadata.summary_sha256);ArchiveDigest=$Entry.ArchiveDigest;TemporaryOwner=$owner}
+  $scope='core-modules-powershell-and-modules-native-csharp';$runtime=$metadata.PSObject.Properties['coverage_scope'] -and $metadata.coverage_scope -ceq $scope
+  if($runtime){
+   if(-not $snapshot.PSObject.Properties['RepoCoverage'] -or $snapshot.RepoCoverage.SchemaVersion -ne 2 -or $snapshot.RepoCoverage.Scope -cne $scope -or $metadata.PSObject.Properties['profile_sha256'] -or (Test-Path -LiteralPath (Join-Path $native 'go_coverage.out'))){throw 'runtime 收據與報告範圍不符。'}
+  }else{
+   if($metadata.PSObject.Properties['coverage_scope'] -or ($snapshot.PSObject.Properties['RepoCoverage'] -and $snapshot.RepoCoverage.SchemaVersion -eq 2) -or -not $metadata.PSObject.Properties['profile_sha256'] -or (Get-FileHash -LiteralPath (Join-Path $native 'go_coverage.out') -Algorithm SHA256).Hash.ToLowerInvariant() -cne $metadata.profile_sha256){throw '歷史收據與 Go profile 不符。'}
+  }
+  $files=@(Get-TestReportArtifactNames $snapshot.SchemaVersion -IncludeGoProfile:(-not $runtime)|ForEach-Object {[pscustomobject]@{Name=$_}})
+  return [pscustomobject]@{Snapshot=$snapshot;Manifest=[pscustomobject]@{Files=$files};HasGoProfile=(-not $runtime);AssetDirectory=$native;SnapshotPath=$summary;SnapshotDigest=('sha256:'+$metadata.summary_sha256);ArchiveDigest=$Entry.ArchiveDigest;TemporaryOwner=$owner}
  } catch {Remove-ReportOwnedTemp -Handle $owner;throw} finally {$env:GIT_CONFIG_GLOBAL=$oldGlobal;$env:GIT_CONFIG_NOSYSTEM=$oldSystem}
 }
 function Test-PortalReleaseEvidence {

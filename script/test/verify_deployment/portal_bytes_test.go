@@ -79,3 +79,35 @@ func TestPortalArtifactPublicBytes(t *testing.T) {
 		})
 	}
 }
+
+func TestRuntimePortalBytesDoNotRequireLegacyProfile(t *testing.T) {
+	root := t.TempDir()
+	files := map[string][]byte{
+		"versions.json":                []byte(`[{"Version":"v0.2.5","Status":"Verified","Path":"versions/v0.2.5/index.html"}]`),
+		"versions/v0.2.5/index.html":   []byte("page"),
+		"versions/v0.2.5/summary.json": []byte(`{"RepoCoverage":{"SchemaVersion":2,"Metric":"runtime-powershell-csharp-executable-lines-v2","Scope":"core-modules-powershell-and-modules-native-csharp"}}`),
+	}
+	for name, b := range files {
+		p := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, b, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func(name string) ([]byte, error) {
+		b, ok := files[name]
+		if !ok {
+			return nil, fmt.Errorf("missing %s", name)
+		}
+		return b, nil
+	}
+	if err := verifyPortalBytes(read, root, "v0.2.5"); err != nil {
+		t.Fatalf("runtime page rejected: %v", err)
+	}
+	files["versions/v0.2.5/index.html"] = []byte("stale")
+	if err := verifyPortalBytes(read, root, "v0.2.5"); err == nil {
+		t.Fatal("stale runtime page accepted")
+	}
+}

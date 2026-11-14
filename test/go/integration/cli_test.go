@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	a "windows_setup/script/test/acceptance"
 )
 
 func TestCLICommands(t *testing.T) {
@@ -108,7 +110,7 @@ func TestCLICommands(t *testing.T) {
 						t.Fatal(e)
 					}
 				}
-				if b, e := run("run", "./script/test/requirements_gate", "--artifact-dir", badDir, "--source-root", root, "--expected-sha", q.Commit, "--expected-run-url", ""); e == nil || !strings.Contains(b, "fresh schema2 release Go evidence") {
+				if b, e := run("run", "./script/test/requirements_gate", "--tests-only", "--artifact-dir", badDir, "--source-root", root, "--expected-sha", q.Commit, "--expected-run-url", ""); e == nil || !strings.Contains(b, "fresh schema2 release Go evidence") {
 					t.Fatalf("empty release run was not refused for expected reason: %s %v", b, e)
 				}
 			}
@@ -119,7 +121,7 @@ func TestCLICommands(t *testing.T) {
 				{"valid", q.Commit, q.RunUrl, true}, {"wrong_sha", strings.Repeat("0", 40), q.RunUrl, false}, {"wrong_url", q.Commit, q.RunUrl + "0", false},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
-					b, e := run("run", "./script/test/requirements_gate", "--artifact-dir", dir, "--source-root", root, "--expected-sha", tc.sha, "--expected-run-url", tc.url)
+					b, e := run("run", "./script/test/requirements_gate", "--tests-only", "--artifact-dir", dir, "--source-root", root, "--expected-sha", tc.sha, "--expected-run-url", tc.url)
 					if (e == nil) != tc.success {
 						t.Fatalf("unexpected CLI outcome: %s %v", b, e)
 					}
@@ -127,8 +129,36 @@ func TestCLICommands(t *testing.T) {
 			}
 		})
 	}
+	t.Run("synthetic_release_go_evidence_requires_run", func(t *testing.T) {
+		m := synthetic(t, files(t, os.Getenv("WINDOWS_SETUP_ARTIFACT_DIR")), true, "Release")
+		r := decode(t, m)
+		coverage, profile, err := a.CreateCoverageEvidence([][]byte{[]byte("mode: set\nwindows_setup/script/test/example.go:1.1,1.2 1 1\n")}, []string{"windows_setup/script/test/example.go"}, a.CoverageProvenance{Commit: r.Commit, RunUrl: r.RunUrl, MeasuredAt: r.MeasuredAt, SourceState: "Clean", GoVersion: "go1.27.3", Environment: "Synthetic identity fixture"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		m = identityFixture(t, m, r.Commit, "")
+		coverage.RunUrl = ""
+		var summary map[string]any
+		if err = json.Unmarshal(m["summary.json"], &summary); err != nil {
+			t.Fatal(err)
+		}
+		summary["GoCoverage"] = coverage
+		m["summary.json"], _ = json.Marshal(summary)
+		m["go_coverage.json"], _ = json.Marshal(coverage)
+		m["go_coverage.out"] = profile
+		dir := t.TempDir()
+		for n, b := range m {
+			if err := os.WriteFile(filepath.Join(dir, n), b, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		b, e := run("run", "./script/test/requirements_gate", "--tests-only", "--artifact-dir", dir, "--source-root", root, "--expected-sha", r.Commit, "--expected-run-url", "")
+		if e == nil || !strings.Contains(b, "fresh schema2 release Go evidence") {
+			t.Fatalf("release with Go evidence and empty run accepted or wrong failure: %s %v", b, e)
+		}
+	})
 	t.Run("valid_report", func(t *testing.T) {
-		b, e := run("run", "./script/test/requirements_gate", "--artifact-dir", os.Getenv("WINDOWS_SETUP_ARTIFACT_DIR"), "--source-root", root, "--expected-sha", r.Commit, "--expected-run-url", r.RunUrl)
+		b, e := run("run", "./script/test/requirements_gate", "--tests-only", "--artifact-dir", os.Getenv("WINDOWS_SETUP_ARTIFACT_DIR"), "--source-root", root, "--expected-sha", r.Commit, "--expected-run-url", r.RunUrl)
 		if e != nil || !strings.Contains(b, "需求驗收通過") {
 			t.Fatalf("%s %v", b, e)
 		}
@@ -147,14 +177,14 @@ func TestCLICommands(t *testing.T) {
 				t.Fatal(e)
 			}
 		}
-		b, e := run("run", "./script/test/requirements_gate", "--artifact-dir", dir, "--source-root", root, "--expected-sha", q.Commit, "--expected-run-url", "")
+		b, e := run("run", "./script/test/requirements_gate", "--tests-only", "--artifact-dir", dir, "--source-root", root, "--expected-sha", q.Commit, "--expected-run-url", "")
 		if e != nil || !strings.Contains(b, "需求驗收通過") {
 			t.Fatalf("local no-CI evidence rejected: %s %v", b, e)
 		}
 	})
 	t.Run("wrong_sha_exit", func(t *testing.T) {
 		before, _ := filepath.Glob(filepath.Join(coverageDir, "covcounters.*"))
-		b, e := run("run", "./script/test/requirements_gate", "--artifact-dir", os.Getenv("WINDOWS_SETUP_ARTIFACT_DIR"), "--source-root", root, "--expected-sha", strings.Repeat("0", 40), "--expected-run-url", r.RunUrl)
+		b, e := run("run", "./script/test/requirements_gate", "--tests-only", "--artifact-dir", os.Getenv("WINDOWS_SETUP_ARTIFACT_DIR"), "--source-root", root, "--expected-sha", strings.Repeat("0", 40), "--expected-run-url", r.RunUrl)
 		if e == nil || !strings.Contains(b, "需求驗收失敗") {
 			t.Fatalf("%s %v", b, e)
 		}
@@ -175,7 +205,7 @@ func TestCLICommands(t *testing.T) {
 			dir = t.TempDir()
 			t.Setenv("GOCOVERDIR", dir)
 		}
-		b, e := run("run", "./script/test/requirements_gate", "--artifact-dir", os.Getenv("WINDOWS_SETUP_ARTIFACT_DIR"), "--source-root", root, "--expected-sha", r.Commit, "--expected-run-url", r.RunUrl)
+		b, e := run("run", "./script/test/requirements_gate", "--tests-only", "--artifact-dir", os.Getenv("WINDOWS_SETUP_ARTIFACT_DIR"), "--source-root", root, "--expected-sha", r.Commit, "--expected-run-url", r.RunUrl)
 		if e != nil {
 			t.Fatalf("CLI prerequisite: %s %v", b, e)
 		}
