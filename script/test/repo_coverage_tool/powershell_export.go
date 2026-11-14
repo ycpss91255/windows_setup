@@ -14,6 +14,7 @@ import (
 func exportPowerShell(args []string, out io.Writer) error {
 	f := flag.NewFlagSet("export-powershell", flag.ContinueOnError)
 	f.SetOutput(out)
+	runtime := f.Bool("runtime", false, "restrict inventory to runtime coverage")
 	source := f.String("source-root", "", "original source root")
 	input := f.String("evidence-dir", "", "completed PowerShell collector directory")
 	destination := f.String("output-dir", "", "new external safe export directory")
@@ -43,7 +44,12 @@ func exportPowerShell(args []string, out io.Writer) error {
 	if _, err := os.Lstat(output); !os.IsNotExist(err) {
 		return fmt.Errorf("raw output already exists or cannot be inspected")
 	}
-	inventory, err := rc.ScanInventory(*source)
+	var inventory rc.Inventory
+	if *runtime {
+		inventory, err = rc.ScanRuntimeInventory(*source)
+	} else {
+		inventory, err = rc.ScanInventory(*source)
+	}
 	if err != nil {
 		return fmt.Errorf("cannot inspect original source")
 	}

@@ -44,7 +44,14 @@ func deploymentPages(t *testing.T, source string) (map[string][]byte, string, st
 	if err := os.WriteFile(p, []byte("package example\nfunc Value() int { return 1 }\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"init", "-q"}, {"add", "--", name}} {
+	psName := "core/value.ps1"
+	if err := os.MkdirAll(filepath.Join(source, "core"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, filepath.FromSlash(psName)), []byte("Write-Output 1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "--", name, psName}} {
 		cmd := exec.Command("git", append([]string{"-C", source}, args...)...)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("synthetic tracked source: %v %s", err, out)
@@ -54,13 +61,19 @@ func deploymentPages(t *testing.T, source string) (map[string][]byte, string, st
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(inv.Sources) != 1 {
+	if len(inv.Sources) != 2 {
 		t.Fatalf("unexpected fixture inventory: %+v", inv)
 	}
-	inv.Sources[0].ExpectedLines = []int{2}
+	for i := range inv.Sources {
+		if inv.Sources[i].Path == name {
+			inv.Sources[i].ExpectedLines = []int{2}
+		} else {
+			inv.Sources[i].ExpectedLines = []int{1}
+		}
+	}
 	sha, runURL := strings.Repeat("a", 40), "https://github.com/example/windows_setup/actions/runs/1"
 	stamp := "2026-01-01T00:00:00Z"
-	art, err := c.CreateEvidence(inv, []c.Report{{SchemaVersion: 1, Metric: c.Metric, Files: map[string]map[int]bool{name: {2: true}}}}, c.Identity{Commit: sha, RunUrl: runURL, MeasuredAt: stamp, SourceState: "Clean"})
+	art, err := c.CreateEvidence(inv, []c.Report{{SchemaVersion: 1, Metric: c.Metric, Files: map[string]map[int]bool{name: {2: true}, psName: {1: true}}}}, c.Identity{Commit: sha, RunUrl: runURL, MeasuredAt: stamp, SourceState: "Clean"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +90,7 @@ func deploymentPages(t *testing.T, source string) (map[string][]byte, string, st
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := map[string][]byte{"main/summary.json": data, "main/repo_coverage.json": art.Summary, "main/coverage_inventory.json": art.Inventory, "main/coverage.xml": art.XML, "main/junit.xml": []byte(`<testsuites><testsuite name="Unit"><testcase/></testsuite><testsuite name="Integration"><testcase/></testsuite></testsuites>`), "main/summary.md": []byte(sha + " " + stamp), "main/index.html": []byte(`<h2>單元與隔離整合測試通過</h2><a href="summary.json">JSON</a><a href="summary.md">MD</a><a href="junit.xml">JUnit</a>`), "versions.json": []byte(`[]`), "index.html": []byte(`<h1>目前程式檢查通過</h1><h2>整體覆蓋率</h2><p>100.0%（1/1 可執行行）</p><p>aaaaaaa 2026-01-01 00:00:00 UTC</p><a href="main/index.html">結果</a><a href="https://github.com/example/windows_setup/blob/main/readme.md">說明</a>`)}
+	m := map[string][]byte{"main/summary.json": data, "main/repo_coverage.json": art.Summary, "main/coverage_inventory.json": art.Inventory, "main/coverage.xml": art.XML, "main/junit.xml": []byte(`<testsuites><testsuite name="Unit"><testcase/></testsuite><testsuite name="Integration"><testcase/></testsuite></testsuites>`), "main/summary.md": []byte(sha + " " + stamp), "main/index.html": []byte(`<h2>單元與隔離整合測試通過</h2><a href="summary.json">JSON</a><a href="summary.md">MD</a><a href="junit.xml">JUnit</a>`), "versions.json": []byte(`[]`), "index.html": []byte(`<h1>目前程式檢查通過</h1><h2>整體覆蓋率</h2><p>100.0%（2/2 可執行行）</p><p>aaaaaaa 2026-01-01 00:00:00 UTC</p><a href="main/index.html">結果</a><a href="https://github.com/example/windows_setup/blob/main/readme.md">說明</a>`)}
 	for _, n := range []string{"unit", "integration", "coverage"} {
 		label, status, color := n+" branch", "passed", "#4c1"
 		if n == "coverage" {
@@ -91,8 +104,39 @@ func deploymentPages(t *testing.T, source string) (map[string][]byte, string, st
 }
 
 func TestDeploymentCases(t *testing.T) {
+	oldDeploymentSleep := deploymentSleep
+	deploymentSleep = func(time.Duration) {}
+	defer func() { deploymentSleep = oldDeploymentSleep }()
 	source := t.TempDir()
 	pages, sha, runURL := deploymentPages(t, source)
+	legacy := map[string][]byte{}
+	for name, b := range pages {
+		legacy[name] = append([]byte(nil), b...)
+	}
+	inv, err := c.ScanRuntimeInventory(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv.Sources[0].ExpectedLines = []int{1}
+	art, err := c.CreateRuntimeEvidence(inv, []c.Report{{SchemaVersion: 1, Metric: c.Metric, Files: map[string]map[int]bool{"core/value.ps1": {1: true}}}}, c.Identity{Commit: sha, RunUrl: runURL, MeasuredAt: "2026-01-01T00:00:00Z", SourceState: "Clean"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err = json.Unmarshal(pages["main/summary.json"], &raw); err != nil {
+		t.Fatal(err)
+	}
+	var evidence any
+	if err = json.Unmarshal(art.Summary, &evidence); err != nil {
+		t.Fatal(err)
+	}
+	raw["RepoCoverage"] = evidence
+	pages["main/summary.json"], _ = json.Marshal(raw)
+	pages["main/repo_coverage.json"], pages["main/coverage_inventory.json"], pages["main/coverage.xml"] = art.Summary, art.Inventory, art.XML
+	pages["index.html"] = []byte(strings.ReplaceAll(strings.ReplaceAll(string(legacy["index.html"]), "整體覆蓋率", "PowerShell/C# runtime 覆蓋率"), "2/2", "1/1"))
+	label, value := "runtime PowerShell/C#", "100.0%"
+	l, q := len(label)*7+12, len(value)*7+12
+	pages["main/coverage.svg"] = []byte(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" height="20" width="%d" aria-label="%s branch: %s"><title>%s branch: %s</title><rect width="%d" fill="#555"/><rect width="%d" fill="#007ec6"/><g font-size="11"><text>%s</text><text>%s</text></g></svg>`, l+q, label, value, label, value, l, q, label, value))
 	previous, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -172,6 +216,23 @@ func TestDeploymentCases(t *testing.T) {
 		return []string{"--base-url", server.URL, "--readme", doc, "--expected-sha", sha, "--expected-run-url", runURL}
 	}
 	t.Setenv("GITHUB_STEP_SUMMARY", "")
+	t.Run("current_rejects_legacy_even_with_matching_identity", func(t *testing.T) {
+		saved := map[string][]byte{}
+		for name, b := range legacy {
+			if name == "index.html" || strings.HasPrefix(name, "main/") {
+				saved[name] = pages[name]
+				pages[name] = b
+			}
+		}
+		defer func() {
+			for name, b := range saved {
+				pages[name] = b
+			}
+		}()
+		if err := invoke(args()...); err == nil || !strings.Contains(err.Error(), "current deployment requires runtime") {
+			t.Fatalf("legacy current accepted or wrong failure: %v", err)
+		}
+	})
 	t.Run("branch_verifies_deployed_portal", func(t *testing.T) {
 		portal := t.TempDir()
 		if err := os.WriteFile(filepath.Join(portal, "versions.json"), pages["versions.json"], 0600); err != nil {
@@ -248,6 +309,22 @@ func TestDeploymentCases(t *testing.T) {
 		}
 	})
 	t.Run("tag_public_evidence", func(t *testing.T) {
+		current := map[string][]byte{}
+		for name, b := range pages {
+			if strings.HasPrefix(name, "main/") {
+				current[name] = append([]byte(nil), b...)
+			}
+		}
+		defer func() {
+			for name, b := range current {
+				pages[name] = b
+			}
+		}()
+		for name, b := range legacy {
+			if strings.HasPrefix(name, "main/") {
+				pages[name] = append([]byte(nil), b...)
+			}
+		}
 		oldSleep := deploymentSleep
 		deploymentSleep = func(time.Duration) {}
 		defer func() { deploymentSleep = oldSleep }()
@@ -317,6 +394,12 @@ func TestDeploymentCases(t *testing.T) {
 			pages["versions.json"] = []byte(`[]`)
 		}()
 		tagArgs := append(args(), "--mode", "release", "--tag", tag, "--release-metadata", metadata)
+		t.Run("current_runtime_rejects_legacy_raw", func(t *testing.T) {
+			err := invoke(append(append([]string{}, tagArgs...), "--require-runtime")...)
+			if err == nil || !strings.Contains(err.Error(), "runtime bundle") {
+				t.Fatalf("current runtime accepted legacy raw or wrong rejection: %v", err)
+			}
+		})
 		t.Run("混合新舊附件必須拒絕", func(t *testing.T) {
 			original, err := os.ReadFile(metadata)
 			if err != nil {
@@ -386,6 +469,9 @@ func TestDeploymentCases(t *testing.T) {
 			zipArgs := append(append([]string{}, tagArgs...), "--report-bundle-tool", "trusted", "--report-archive", archive, "--run-attempt", "1")
 			if err := invoke(zipArgs...); err != nil || calls != 1 {
 				t.Fatalf("驗證版本報表失敗: %v calls=%d", err, calls)
+			}
+			if err := invoke(append(append([]string{}, zipArgs...), "--require-runtime")...); err == nil || !strings.Contains(err.Error(), "runtime bundle") {
+				t.Fatalf("current runtime accepted legacy ZIP or wrong rejection: %v", err)
 			}
 			rows[0]["ArchiveDigest"] = rows[0]["Digest"]
 			pages["versions.json"], _ = json.Marshal(rows)
@@ -550,8 +636,14 @@ func TestDeploymentCases(t *testing.T) {
 			if e != nil {
 				t.Fatal(e)
 			}
-			inv.Sources[0].ExpectedLines = []int{2}
-			art, e := c.CreateEvidence(inv, []c.Report{{SchemaVersion: 1, Metric: c.Metric, Files: map[string]map[int]bool{"script/test/example/value.go": {2: false}}}}, c.Identity{Commit: sha, RunUrl: runURL, MeasuredAt: "2026-01-01T00:00:00Z", SourceState: "Clean"})
+			for i := range inv.Sources {
+				if inv.Sources[i].Path == "core/value.ps1" {
+					inv.Sources[i].ExpectedLines = []int{1}
+				} else {
+					inv.Sources[i].ExpectedLines = []int{2}
+				}
+			}
+			art, e := c.CreateEvidence(inv, []c.Report{{SchemaVersion: 1, Metric: c.Metric, Files: map[string]map[int]bool{"script/test/example/value.go": {2: false}, "core/value.ps1": {1: true}}}}, c.Identity{Commit: sha, RunUrl: runURL, MeasuredAt: "2026-01-01T00:00:00Z", SourceState: "Clean"})
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -575,7 +667,7 @@ func TestDeploymentCases(t *testing.T) {
 			pages[prefix+"repo_coverage.json"] = art.Summary
 			pages[prefix+"coverage_inventory.json"] = art.Inventory
 			pages[prefix+"coverage.xml"] = art.XML
-			label, value := "coverage release", "0.0%"
+			label, value := "coverage release", "50.0%"
 			l, q := len(label)*7+12, len(value)*7+12
 			pages[prefix+"coverage.svg"] = []byte(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" height="20" width="%d"><rect width="%d" fill="#555"/><rect width="%d" fill="#007ec6"/><g font-size="11"><text>%s</text><text>%s</text></g></svg>`, l+q, l, q, label, value))
 			writeRelease(digest)

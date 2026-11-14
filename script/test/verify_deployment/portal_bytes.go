@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	a "windows_setup/script/test/acceptance"
+	c "windows_setup/script/test/repo_coverage"
 )
 
 // verifyPortalBytes compares public pages to the already validated same-run portal artifact.
@@ -66,10 +67,28 @@ func verifyPortalBytes(read a.Reader, root, requiredVersion string) error {
 			foundRequired = true
 		}
 		if row.Status == "Verified" {
-			for _, name := range []string{"index.html", "summary.json", "go_coverage.out"} {
+			prefix := "versions/" + row.Version + "/"
+			for _, name := range []string{"index.html", "summary.json"} {
 				if err = compare("versions/" + row.Version + "/" + name); err != nil {
 					return err
 				}
+			}
+			summary, err := readLocal(prefix + "summary.json")
+			if err != nil {
+				return err
+			}
+			var report struct {
+				RepoCoverage struct {
+					SchemaVersion int
+					Metric, Scope string
+				}
+			}
+			if json.Unmarshal(summary, &report) == nil && report.RepoCoverage.SchemaVersion == c.RuntimeSchemaVersion {
+				if report.RepoCoverage.Metric != c.RuntimeMetric || report.RepoCoverage.Scope != c.RuntimeScope {
+					return fmt.Errorf("invalid runtime portal scope")
+				}
+			} else if err = compare(prefix + "go_coverage.out"); err != nil {
+				return err
 			}
 		}
 	}

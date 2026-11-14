@@ -128,6 +128,10 @@ func dockerHasLogic(text string) bool {
 // load. It lists production and maintenance programs, retaining missing or
 // unsupported collectors as blockers. Exclusions are published with reasons.
 func ScanInventory(root string) (Inventory, error) {
+	return scanInventory(root, false)
+}
+
+func scanInventory(root string, runtime bool) (Inventory, error) {
 	var inv Inventory
 	info, err := os.Stat(root)
 	if err != nil {
@@ -160,7 +164,7 @@ func ScanInventory(root string) (Inventory, error) {
 				reason = "local development worktrees"
 			case lower == ".git":
 				reason = "version-control metadata"
-			case lower == "vendor" || strings.EqualFold(entry.Name(), "win11debloat"):
+			case lower == "vendor" || (!runtime && strings.EqualFold(entry.Name(), "win11debloat")) || (runtime && strings.EqualFold(rel, "modules/debloat/win11debloat")):
 				reason = "third-party source"
 			case lower == "test":
 				reason = "test fixtures and test cases"

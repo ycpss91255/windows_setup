@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	c "windows_setup/script/test/repo_coverage"
 )
 
 var legacyEvidence = map[string]bool{"quality.json": true, "quality-manifest.json": true, "index.html": true, "summary.md": true, "junit.xml": true, "unit.svg": true, "integration.svg": true, "system.svg": true, "coverage.svg": true, "repo_coverage.json": true, "coverage_inventory.json": true, "coverage.xml": true, "go_coverage.out": true, "go_coverage.json": true, "go_coverage.svg": true, "summary.json": true}
@@ -138,6 +139,7 @@ func prepareReleaseBundle(metadata []byte, tag, sha, run string, attempt int, to
 		RunAttempt    int    `json:"run_attempt"`
 		SummarySHA256 string `json:"summary_sha256"`
 		ProfileSHA256 string `json:"profile_sha256"`
+		CoverageScope string `json:"coverage_scope"`
 		ContextOrigin string `json:"context_origin"`
 	}
 	d := json.NewDecoder(bytes.NewReader(b))
@@ -155,14 +157,27 @@ func prepareReleaseBundle(metadata []byte, tag, sha, run string, attempt int, to
 	if err != nil {
 		return nil, err
 	}
-	profile, err := os.ReadFile(filepath.Join(out, "native", "go_coverage.out"))
-	if err != nil {
-		return nil, err
-	}
-	if assetFromBytes("", summary).Digest != "sha256:"+v.SummarySHA256 || assetFromBytes("", profile).Digest != "sha256:"+v.ProfileSHA256 {
+	if assetFromBytes("", summary).Digest != "sha256:"+v.SummarySHA256 {
 		return nil, fmt.Errorf("verified output mismatch")
 	}
-	return &verifiedBundle{Summary: summary, Profile: profile, ArchiveDigest: outer.Digest}, nil
+	var profile []byte
+	switch v.CoverageScope {
+	case "":
+		profile, err = os.ReadFile(filepath.Join(out, "native", "go_coverage.out"))
+		if err != nil || assetFromBytes("", profile).Digest != "sha256:"+v.ProfileSHA256 {
+			return nil, fmt.Errorf("verified profile mismatch")
+		}
+	case c.RuntimeScope:
+		if v.ProfileSHA256 != "" {
+			return nil, fmt.Errorf("runtime receipt contains Go profile")
+		}
+		if _, err = os.Lstat(filepath.Join(out, "native", "go_coverage.out")); !os.IsNotExist(err) {
+			return nil, fmt.Errorf("runtime output contains Go profile")
+		}
+	default:
+		return nil, fmt.Errorf("unknown coverage scope")
+	}
+	return &verifiedBundle{Summary: summary, Profile: profile, ArchiveDigest: outer.Digest, CoverageScope: v.CoverageScope}, nil
 }
 
 var runAssetDownload = func(args ...string) error {

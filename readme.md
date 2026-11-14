@@ -6,7 +6,7 @@
 [![Coverage](https://ycpss91255.github.io/windows_setup/main/coverage.svg)](https://ycpss91255.github.io/windows_setup/main/index.html)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue?style=flat-square)](license)
 
-上方覆蓋率徽章顯示最近一次成功部署 main 的整體自有程式碼覆蓋率；點擊徽章可查閱該次靜態詳細報表與來源。若部署失敗，徽章保留上次成功結果，請以 Windows CI 與 Actions 的最新執行結果為準。PR 不更新公開報表。
+新範圍成功部署後，上方覆蓋率徽章顯示最近一次成功部署 main 的 PowerShell/C# runtime 可執行行覆蓋率；舊徽章在更新前仍代表當時的口徑。點擊徽章可查閱該次報表與來源。若部署失敗，徽章保留上次成功結果，請以 Windows CI 與 Actions 的最新執行結果為準。PR 不更新公開報表。
 
 使用 **v0.2.5 或更新版本**時，在對應的 [GitHub Release](https://github.com/ycpss91255/windows_setup/releases) Assets 下載 `windows_setup_report_<version>.zip`，解壓後開啟 `index.html`，即可查看原生與容器報表及各自的量測範圍（Scope）。v0.2.4 仍使用該版既有的原始品質附件與歷史報表頁，不提供此 ZIP。
 
@@ -634,11 +634,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/test/verify_clien
 
 ### 平行測試與完整證據聚合
 
-原生完整測試與 Go 量測和四片 PowerShell 同時執行。只有聚合工作等齊兩邊，核對本次提交、執行 ID、attempt 與原始檔雜湊後，才在當地量測 C#／CMD，產生完整的整體覆蓋率及正式報告。
+原生完整測試、Go 維護工具測試與四片 PowerShell 量測平行執行。聚合核對本次提交、執行 ID、attempt 與來源雜湊後，結合 C# 量測，產生 runtime 覆蓋率及正式報告。
 
 ```mermaid
 flowchart LR
-  native["原生 All ＋全部 Go 八成"] --> aggregate["同次證據聚合＋C#／CMD＋整體八成"]
+  native["原生 All ＋全部 Go 測試"] --> aggregate["同次證據聚合＋C#／PowerShell runtime 八成"]
   powershell["PowerShell 完整四片"] --> aggregate
   aggregate --> gate["需求驗收與 ci-rollup"]
   docker["Windows Docker 完整測試與負例"] --> gate
@@ -646,13 +646,13 @@ flowchart LR
   gate --> publish["main：Pages／標籤：Release"]
 ```
 
-`native-stage-執行ID-attempt` 是不可發布的中介附件，只含明確白名單的原生報告及原始 Go 證據，並標示整體尚未完成；沒有 managed 編譯檔、私有路徑或原始日誌。聚合重新驗證完整 native 測試清單、全部 Go 範圍及每份原始位元組；錯誤來源、不同 attempt、少片或變造都會失敗。只有完整八成門檻通過後，聚合才上傳 `windows-test-reports`，Release 與 Pages 不讀取中介附件。
+`native-stage-執行ID-attempt` 是不可發布的中介附件，只含明確白名單的原生報告並標示覆蓋率尚未完成；沒有 managed 編譯檔、私有路徑或原始日誌。聚合重新驗證完整 native 測試清單及原始位元組；錯誤來源、不同 attempt、少片或變造都會失敗。只有完整八成門檻通過後，聚合才上傳 `windows-test-reports`，Release 與 Pages 不讀取中介附件。
 
 版本標籤通過門檻後，CD 以 `report_bundle_tool` 封裝並驗證同次 Windows 原生及容器公開報表，作為該版 Release 的單一報表 ZIP。`verify --output-dir` 可在完整驗證成功後輸出原始檔案及 `verified.json` 摘要；呼叫端須先建立專用、空白且無其他寫入者的私有父目錄，工具不驗證 ACL。消費者仍須對照不可變 Release 的 ZIP 大小與摘要。歷史不可變版本可用 `verify --historical --archive-sha256 <SHA256> --archive-size <位元組數>` 核對外部 Release 附件後驗證；此模式從封裝讀取 run 與 attempt，只代表不可變報表自述，並非獨立來源認證。版本、提交與乾淨精確來源仍為必要輸入。輸入工件的 run 與 attempt 由 CI 精確選取並提供，manifest 記錄此脈絡，不將封裝本身視為獨立來源認證。原生報告保留實際覆蓋率證據，容器報告維持原本的未量測狀態。
 
-main 部署後核對公開首頁及同次完整來源；Tag 部署後核對公開版本索引、版本頁、同次報告，以及摘要與 Go profile 對應不可變 Release 的位元組和雜湊。
+main 部署後核對公開首頁及同次完整來源；Tag 部署後核對公開版本索引、版本頁、同次報告，以及摘要與不可變 Release 封裝的位元組和雜湊。歷史版本保留當時的 Go profile 與原量測口徑。
 
-此分工參考 [PowerShell 的平行測試與最終門檻](https://github.com/PowerShell/PowerShell/blob/638faa6d1d2e0f859a31587c471d85284c26f36f/.github/workflows/windows-ci.yml)及 [Moby 的 Windows producer／artifact consumer](https://github.com/moby/moby/blob/23ea0fa6461ec7455486441ae3a52b1235cdbec0/.github/workflows/.windows.yml)。現有 suite、Docker 完整測試及兩個八成門檻均保留。
+此分工參考 [PowerShell 的平行測試與最終門檻](https://github.com/PowerShell/PowerShell/blob/638faa6d1d2e0f859a31587c471d85284c26f36f/.github/workflows/windows-ci.yml)及 [Moby 的 Windows producer／artifact consumer](https://github.com/moby/moby/blob/23ea0fa6461ec7455486441ae3a52b1235cdbec0/.github/workflows/.windows.yml)。現有 suite 與 Docker 完整測試均保留；runtime 覆蓋率門檻為八成。
 
 CI 工具下載參考 [PowerShell 官方安裝器](https://github.com/PowerShell/PowerShell/blob/638faa6d1d2e0f859a31587c471d85284c26f36f/tools/install-powershell.ps1)，在當次下載內停用 Windows PowerShell 原生進度並恢復偏好；工具解壓使用不輸出進度的 .NET ZIP API，仍先核對官方雜湊並保留開始、完成與耗時訊息。這不影響 `windows.cmd`、Windows Update 或其他產品模組的使用者進度。
 
@@ -664,15 +664,17 @@ Windows 測試映像的健康檢查每 30 秒檢查一次工具是否可回應�
 
 若公開 Pages 版本頁缺失，可在 GitHub **Actions → Windows 測試 → Run workflow** 選擇 **main** 並執行；工作流程會重新完成全部必要測試與覆蓋率門檻，然後重建、部署並驗證入口及已發布的不可變最新版。請等該次工作全數完成並查看結果；非 main 的手動執行不會部署，恢復不會重發或更動既有 Release 與標籤。恢復成功不會改寫先前失敗紀錄，也不代表已查明公開可見性異常的根因。
 
-CI 使用與 base 相同的 GitHub Actions 原生徽章；整體覆蓋率使用儲存庫自行產生的 flat SVG。Pages 作為自行產生的靜態後端，提供 main 徽章與連結的詳細報表；完整版本報表的下載方式見上方說明。不依賴 Codecov、Coveralls 或外部報表平台。
+CI 使用與 base 相同的 GitHub Actions 原生徽章；runtime 覆蓋率使用儲存庫自行產生的 flat SVG。Pages 作為自行產生的靜態後端，提供 main 徽章與連結的詳細報表；完整版本報表的下載方式見上方說明。不依賴 Codecov、Coveralls 或外部報表平台。
 
-在 GitHub Actions 開啟該次 PR 或 main 執行的 Summary，可查看測試與聚合後的整體及語言覆蓋率；各 PowerShell 分片另列量測階段耗時。README 徽章只展示整體覆蓋率，語言分項放在報表與 Actions 摘要。整體以自有正式程式碼的可執行行計算，從各語言量測結果換算相同計量後加總覆蓋行與總行數，不取各語言百分比平均。測試、第三方內容及非執行設定檔依來源清單明確分類；缺來源、未支援語言或缺量測時不公布假的總率。
+在 GitHub Actions 的 Summary 可查看測試與聚合後的 PowerShell/C# runtime 覆蓋率；各 PowerShell 分片另列量測階段耗時。範圍為 `core/`、`modules/` 中的 PowerShell，以及 `modules/*/native/*.cs` 的 C#；以可執行行加總，不取語言百分比平均。CMD 啟動器的功能與契約測試、Go 維護工具測試仍須通過，但兩者不計入覆蓋率，Go 不設覆蓋率門檻。新增範圍外 runtime 可執行種類時必須明確更新範圍，缺來源或量測時拒絕發布。歷史報告保留當時口徑，不轉標為新指標。
 
 每次測試從實際斷言事件及程序退出碼產生 JSON、Markdown、自含 HTML、JUnit XML 與徽章。程序崩潰、缺少斷言事件或任何失敗均不能標成通過。新增 `test/powershell/unit` 或 `integration` 測試會自動列入執行清單。公開報表只包含靜態檢查、單元與隔離整合結果。
 
 PR 的去識別測試附件保留七天；main 通過全部必要門檻後更新 Pages，失敗時公開徽章仍保留上次成功部署的證據。新版 Release 的報表 ZIP 長期保存 `repo_coverage.json`、`coverage_inventory.json`、`coverage.xml` 與兩種環境的測試摘要，核對來源、計量、雜湊及計數。歷史版本依原始證據整理頁面並連回不可變原始附件；缺紀錄就如實說明，不以目前測試回填。
 
-維護者接線依序為：產生三份整體證據 → `script/test/attach_repo_coverage.ps1` 附加到測試報表 → `script/report/build_portal.ps1` 或 `publish_quality_release.ps1`。三個入口都使用已建置的 `repo_coverage_tool`，由 `-CoverageToolPath` 或 `WINDOWS_SETUP_COVERAGE_TOOL` 指定；缺工具、缺來源、未完整量測或未達精確 80% 都會停止。附加時以 `-SourceRoot` 核對真實 checkout。`build_portal.ps1 -Preview` 僅供本機合成樣本，不得用於正式 Pages 或 Release；本輪 publisher 不接受降級到歷史 schema1。
+維護者接線依序為：產生三份 runtime 證據 → `script/test/attach_repo_coverage.ps1` 附加到測試報表 → `script/report/build_portal.ps1` 或 `publish_quality_release.ps1`。三個入口都使用已建置的 `repo_coverage_tool`，由 `-CoverageToolPath` 或 `WINDOWS_SETUP_COVERAGE_TOOL` 指定；缺工具、缺來源、未完整量測或未達精確 80% 都會停止。附加時以 `-SourceRoot` 核對真實 checkout。`build_portal.ps1 -Preview` 僅供本機合成樣本，不得用於正式 Pages 或 Release；本輪 publisher 不接受舊覆蓋率口徑。
+
+正式 Pages 必須提供同一 main run 與 attempt 的原生和容器報告；`build_portal.ps1` 以 `-MainSnapshotPath`、`-ContainerSnapshotPath` 指定兩份摘要，並由 `-BundleToolPath` 或 `WINDOWS_SETUP_REPORT_BUNDLE_TOOL` 指定已建置的報表驗證工具。兩份報告各自保留測試分母；容器覆蓋率未量測，不與原生合併。新版 ZIP 以 `presentation` 標記單頁版面，現行工具也能驗證缺少該欄位的歷史封裝；舊版嚴格驗證工具可能拒絕新版 ZIP，驗證時請使用與 ZIP 同版的工具。
 
 各機續跑及排錯的 `reports` 保留於該機，不納入 Git 或 Pages。`windows.cmd -AfterRestart` 與 `windows.cmd -VerifyOnly` 是產品功能，繼續供設定後續跑及檢查。
 
@@ -730,15 +732,15 @@ CI 的 Docker 工作總預算為 125 分鐘：就緒檢查 3 分鐘、映像建�
 
 直接執行 Go 測試時，在完整 checkout 根目錄使用 `go test -mod=vendor -count=1 ./...`，並將 `WINDOWS_SETUP_ARTIFACT_DIR` 指向 PS5.1 產生的 public 報告、`WINDOWS_SETUP_PORTAL_FIXTURE_DIR` 指向 `script/test/create_portal_fixture.ps1` 產生的 portal 目錄。兩者缺少即失敗，不以跳過掩蓋缺證據；上述 Docker `test` 入口會自動準備這些輸入。Go 單元及整合測試包含原有 21 項驗收契約與新增解析／命令列邊界案例，結果獨立於 PS5.1 報表數量。
 
-容器映像提供 Windows PowerShell 5.1、固定版本且核對雜湊的 MinGit 與 Go 1.27.3。一般本機未設定 GitHub 執行來源時，PS5.1 仍測試目前真實 checkout，保留其 Clean／Dirty 狀態；Go 需求合約使用另外明確標示 Synthetic 的暫存樣本，不改寫或冒充本機正式報告。本機模式不產生已通過 80% 的 CI 覆蓋率證據。CI 則必須以本次真實報告驗收；正式發布另要求整體自有程式碼量測完整，並以原始覆蓋行數通過精確 80% 門檻；GitHub 提交、儲存庫、執行 ID、ref 類型與 ref 名稱這五項只要部分存在或格式錯誤就停止，不會降級成合成證據通過。
+容器映像提供 Windows PowerShell 5.1、固定版本且核對雜湊的 MinGit 與 Go 1.27.3。一般本機未設定 GitHub 執行來源時，PS5.1 仍測試目前真實 checkout，保留其 Clean／Dirty 狀態；Go 需求合約使用另外明確標示 Synthetic 的暫存樣本，不改寫或冒充本機正式報告。本機模式不產生已通過 80% 的 CI 覆蓋率證據。CI 必須以本次真實報告驗收，正式發布要求 PowerShell/C# runtime 量測完整並以原始覆蓋行數通過精確 80% 門檻；GitHub 提交、儲存庫、執行 ID、ref 類型與 ref 名稱這五項只要部分存在或格式錯誤就停止，不會降級成合成證據通過。
 
 GitHub hosted Windows 的 Docker 預檢在兩分鐘內確認真實 Windows daemon；未就緒時最多啟動或重啟 Docker 服務一次。所有探測、服務操作與輸出等待共用期限，失敗仍阻擋發布。這項恢復不會套用於本機或 self-hosted runner，也不會切換引擎、修改網路或安裝 daemon。
 
-CI 的 `docker-tests` 使用真正的 `windows-2022` runner 執行 Docker build/run；容器內執行全部 PS5.1 單元／隔離整合測試，再產生明確的合成首頁樣本並執行 Go 需求正負例、全套 Go 覆蓋率量測與產物驗收。主機另核對容器報告中的提交、執行來源、測試狀態與環境，不以主機驗收代替容器內 Go 執行。PS5.1 報表的套件／斷言統計不把 Go 驗收數量混入；Go 結果與實際退出碼另列於 Docker 工作日誌。`ci-rollup` 同時要求主機測試、需求驗收及 Docker 測試成功。在 [Actions](https://github.com/ycpss91255/windows_setup/actions/workflows/windows_tests.yml) 開啟該次執行，於 Artifacts 下載 `docker-test-reports-執行ID-重試次數`，解壓後開 `index.html`；這是容器的獨立 public 報告，只保留七天。原始 logs 不上傳。Pages 仍展示 Windows runner 的報告，與明確標記 Windows container 的短期報告分開；Docker 門檻未通過時不發布新的 Pages 報表，避免混淆兩個環境的證據。
+CI 的 `docker-tests` 使用真正的 `windows-2022` runner 執行 Docker build/run；容器內執行全部 PS5.1 單元／隔離整合測試，再產生明確的合成首頁樣本並執行全部 Go 測試及需求正負例。主機另核對容器報告中的提交、執行來源、測試狀態與環境，不以主機驗收代替容器內 Go 執行。PS5.1 報表的套件／斷言統計不把 Go 驗收數量混入；Go 結果與實際退出碼另列於 Docker 工作日誌。`ci-rollup` 同時要求主機測試、需求驗收及 Docker 測試成功。在 [Actions](https://github.com/ycpss91255/windows_setup/actions/workflows/windows_tests.yml) 開啟該次執行，於 Artifacts 下載 `docker-test-reports-執行ID-重試次數`，解壓後開 `index.html`；這是容器的獨立 public 報告，只保留七天。原始 logs 不上傳。Pages 仍展示 Windows runner 的報告，與明確標記 Windows container 的短期報告分開；Docker 門檻未通過時不發布新的 Pages 報表，避免混淆兩個環境的證據。
 
-每次 CI 將去識別的 HTML／JSON／Markdown／JUnit 與徽章上傳為 windows-test-reports artifact，保留 7 天；原始套件 log 不上傳。 完成的 PowerShell collector 另匯出 powershell-raw-evidence 附件保留 7 天，即使後續整體彙整失敗也可重播原始命令計數；附件只含核對過的相對路徑 JSON／XML，不包含 stdout、Pester 原始 XML 或帶絕對路徑的收集清單。這是分項原始證據，不表示整體覆蓋率門檻通過。另有 requirements-fixture artifact，只含程式明確建立的合成首頁樣本，固定假 SHA、示例執行網址及 Synthetic 環境標記，不含帳密或實機資料，同樣保留 7 天供需求門檻驗證。這份樣本不是正式測試證據，不混入 windows-test-reports、Release 或 Pages。其他測試副本、帳號 answer XML、每機 Reports 與秘密均不上傳。Actions 本身執行 log 的保留天數另由儲存庫設定控制，不是 YAML artifact 保留期。
+每次 CI 將去識別的 HTML／JSON／Markdown／JUnit 與徽章上傳為 windows-test-reports artifact，保留 7 天；原始套件 log 不上傳。 完成的 PowerShell collector 另匯出 powershell-raw-evidence 附件保留 7 天，即使後續 runtime 彙整失敗也可重播原始命令計數；附件只含核對過的相對路徑 JSON／XML，不包含 stdout、Pester 原始 XML 或帶絕對路徑的收集清單。這是分項原始證據，不表示 runtime 覆蓋率門檻通過。另有 requirements-fixture artifact，只含程式明確建立的合成首頁樣本，固定假 SHA、示例執行網址及 Synthetic 環境標記，不含帳密或實機資料，同樣保留 7 天供需求門檻驗證。這份樣本不是正式測試證據，不混入 windows-test-reports、Release 或 Pages。其他測試副本、帳號 answer XML、每機 Reports 與秘密均不上傳。Actions 本身執行 log 的保留天數另由儲存庫設定控制，不是 YAML artifact 保留期。
 
-完整 PowerShell 量測由四個 Windows 工作平行執行，原生完整測試與 Go producer 另行同時執行；每片保留全部來源分母，聚合重新核對同一提交、執行 ID、attempt、原生測試及 wrapper 雜湊後才完成。重新量測時，在 Actions 選擇「重新執行所有工作」（Re-run all jobs），讓四片、原生 producer 與聚合使用新的同一次 attempt；只重跑失敗工作而混用舊片會被拒絕，不會沿用先前的計數補成通過。
+完整 PowerShell 量測由四個 Windows 工作平行執行，原生完整測試與 Go 測試另行同時執行；每片保留 runtime PowerShell 來源分母，聚合重新核對同一提交、執行 ID、attempt、原生測試及 wrapper 雜湊後才完成。重新量測時，在 Actions 選擇「重新執行所有工作」（Re-run all jobs），讓四片、原生 producer 與聚合使用新的同一次 attempt；只重跑失敗工作而混用舊片會被拒絕，不會沿用先前的計數補成通過。
 
 實機 Setup-Result.json、Setup-Progress.json、Acceptance-Result.json 與驗證結果是續跑或排錯資料，原有 Git 忽略規則保留；CI 不清理這些檔案。設定未完成時不要刪除 Setup-Result.json。
 
@@ -826,7 +828,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\script\release\build_s
 
 PR 與 main 的 `requirements-gate` 讀取同一次 PS5.1 測試產物，驗證來源、統計、JUnit／JSON 狀態、文件連結、隱私與 base 徽章規格，並用破壞性負例確認錯誤會被拒絕；`ci-rollup` 必須同時取得測試與需求驗收成功才能合併。PR 的證據保留原分支身分，不會冒充 main。
 
-Pages 部署後匿名讀取首頁、main 報表、JSON／Markdown／JUnit、整體及分層 SVG、README 的原生 CI／整體 coverage 徽章，以及歷史版本頁。驗收會重算 `repo_coverage.json`、`coverage_inventory.json`、`coverage.xml`，核對本次提交、Actions 來源與實際 checkout 的自有原始碼清單；整體量測必須完整，且 `Covered × 100 >= Executable × 80` 才能通過。分項資訊保留在報表與 Actions 摘要，不要求 README 顯示分項徽章。CDN 只有限重試，舊證據或不一致會失敗，無需 agent 代替腳本處理。
+Pages 部署後匿名讀取首頁、main 報表、JSON／Markdown／JUnit、runtime 及分層 SVG、README 的原生 CI／coverage 徽章，以及歷史版本頁。驗收會重算 `repo_coverage.json`、`coverage_inventory.json`、`coverage.xml`，核對本次提交、Actions 來源與實際 checkout 的 runtime 來源清單；量測必須完整，且 `Covered × 100 >= Executable × 80` 才能通過。語言分項保留在報表與 Actions 摘要。CDN 只有限重試，舊證據或不一致會失敗。
 
 審查以本次變更、實際驗證及最新提交為準；發現問題後修正並重新核對受影響需求，不將先前提交的通過結果套用到修改後版本。具體代理分工依當次授權安排；儲存庫契約見 [維護規範](agents.md)，維護者偏好見 [工作方式](doc/maintainer_workflow.md)。
 

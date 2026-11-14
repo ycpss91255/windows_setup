@@ -75,7 +75,14 @@ if($MainRunId){
   & $helper --repo $Repository --run $MainRunId --attempt $run.run_attempt --id $artifact[0].id --digest $artifact[0].digest --dest $mainDir
   if($LASTEXITCODE -ne 0){throw 'main 品質快照下載失敗。'}
   $snapshot=Get-Content (Join-Path $mainDir 'summary.json') -Raw -Encoding UTF8|ConvertFrom-Json
-  if($snapshot.Commit -cne $mainSha){throw 'main 快照提交不符。'}
+  if($snapshot.Commit -cne $mainSha -or $snapshot.RunUrl -cne ('https://github.com/'+$Repository+'/actions/runs/'+$MainRunId)){throw 'main 快照提交或執行紀錄不符。'}
  }else{throw 'main 同次品質工件缺少或重複。'}
+ $containerArtifact=@($artifactLines|ForEach-Object {$_|ConvertFrom-Json}|Where-Object {$_.name -ceq ('docker-test-reports-'+$MainRunId+'-'+$run.run_attempt)})
+ if($containerArtifact.Count -ne 1 -or $containerArtifact[0].expired -cne $false){throw 'main 同次容器工件缺少或重複。'}
+ $containerDir=Join-Path $out 'windows_container'
+ & $helper --repo $Repository --run $MainRunId --attempt $run.run_attempt --id $containerArtifact[0].id --digest $containerArtifact[0].digest --kind container --dest $containerDir
+ if($LASTEXITCODE -ne 0){throw 'main 容器報告下載失敗。'}
+ $containerSnapshot=Get-Content -LiteralPath (Join-Path $containerDir 'summary.json') -Raw -Encoding UTF8|ConvertFrom-Json
+ if($containerSnapshot.Commit -cne $mainSha -or $containerSnapshot.RunUrl -cne ('https://github.com/'+$Repository+'/actions/runs/'+$MainRunId)){throw 'main 容器報告提交或執行紀錄不符。'}
 }
-[pscustomobject]@{CatalogPath=(Join-Path $out 'catalog.json');MainSnapshotPath=(Join-Path $out 'main/summary.json')}
+[pscustomobject]@{CatalogPath=(Join-Path $out 'catalog.json');MainSnapshotPath=(Join-Path $out 'main/summary.json');ContainerSnapshotPath=(Join-Path $out 'windows_container/summary.json')}

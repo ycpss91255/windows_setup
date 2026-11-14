@@ -8,18 +8,18 @@ function gh {
  if($argsList[0] -ceq 'api' -and $argsList -contains '--paginate' -and $argsList[2] -like '*/releases?*'){return}
  if($argsList[0] -ceq 'api' -and $argsList[1] -like '*/commits/main'){return $sha}
  if($argsList[0] -ceq 'api' -and $argsList -contains '--paginate' -and $argsList[2] -like '*/actions/runs/42/artifacts?*'){
-  return (@{id=456;name=('windows-test-reports-42-'+$global:artifactAttempt);digest=('sha256:'+('a'*64));expired=$false}|ConvertTo-Json -Compress)
+  return @((@{id=456;name=('windows-test-reports-42-'+$global:artifactAttempt);digest=('sha256:'+('a'*64));expired=$false}|ConvertTo-Json -Compress),(@{id=457;name=('docker-test-reports-42-'+$global:artifactAttempt);digest=('sha256:'+('b'*64));expired=$false}|ConvertTo-Json -Compress))
  }
  if($argsList[0] -ceq 'api' -and $argsList[1] -like '*/actions/runs/42'){
   return (@{id=$global:runId;head_sha=$global:runSha;head_branch=$global:runBranch;event=$global:runEvent;run_attempt=$global:runAttempt}|ConvertTo-Json -Compress)
  }
  if($argsList[0] -ceq 'run' -and $argsList[1] -ceq 'download'){
-  $dir=$argsList[[Array]::IndexOf($argsList,'--dir')+1];[IO.File]::WriteAllText((Join-Path $dir 'summary.json'),('{"Commit":"'+$sha+'"}'));return
+  $dir=$argsList[[Array]::IndexOf($argsList,'--dir')+1];[IO.File]::WriteAllText((Join-Path $dir 'summary.json'),('{"Commit":"'+$sha+'","RunUrl":"https://github.com/example/repo/actions/runs/42"}'));return
  }
  throw ('unexpected mock gh request')
 }
 function mock_artifact_download {
- $arguments=@($args);$dir=$arguments[[Array]::IndexOf($arguments,'--dest')+1];New-Item -ItemType Directory $dir|Out-Null;[IO.File]::WriteAllText((Join-Path $dir 'summary.json'),('{"Commit":"'+$sha+'"}'));$global:LASTEXITCODE=0
+ $arguments=@($args);$dir=$arguments[[Array]::IndexOf($arguments,'--dest')+1];New-Item -ItemType Directory $dir|Out-Null;[IO.File]::WriteAllText((Join-Path $dir 'summary.json'),('{"Commit":"'+$sha+'","RunUrl":"https://github.com/example/repo/actions/runs/42"}'));$global:LASTEXITCODE=0
 }
 $oldHelper=$env:WINDOWS_SETUP_ARTIFACT_DOWNLOAD_TOOL;$env:WINDOWS_SETUP_ARTIFACT_DOWNLOAD_TOOL='mock_artifact_download'
 foreach($case in @(

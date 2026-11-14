@@ -45,6 +45,7 @@ func run(args []string, out io.Writer) error {
 	source := flags.String("source-root", "", "選用：核對實際來源清單與雜湊")
 	complete := flags.Bool("require-complete", false, "要求全部來源已量測")
 	minimum := flags.Int("minimum-percent", 0, "完整覆蓋率最低整數百分比")
+	runtimeScope := flags.Bool("runtime", false, "驗證 PowerShell／C# runtime 範圍")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -62,24 +63,45 @@ func run(args []string, out io.Writer) error {
 		}
 		files[index] = data
 	}
-	evidence, err := rc.ValidateEvidence(files[0], files[1], files[2], *sha, *runURL)
-	if err != nil {
-		return err
+	var result rc.Result
+	var commit string
+	if *runtimeScope {
+		evidence, err := rc.ValidateRuntimeEvidence(files[0], files[1], files[2], *sha, *runURL)
+		if err != nil {
+			return err
+		}
+		result, commit = evidence.Result, evidence.Commit
+	} else {
+		evidence, err := rc.ValidateEvidence(files[0], files[1], files[2], *sha, *runURL)
+		if err != nil {
+			return err
+		}
+		result, commit = evidence.Result, evidence.Commit
 	}
 	if *source != "" {
-		if err := rc.ValidateInventory(*source, files[1]); err != nil {
+		var err error
+		if *runtimeScope {
+			err = rc.ValidateRuntimeInventory(*source, files[1])
+		} else {
+			err = rc.ValidateInventory(*source, files[1])
+		}
+		if err != nil {
 			return err
 		}
 	}
-	if (*complete || *minimum > 0) && (!evidence.Result.Complete || evidence.Result.Executable == 0) {
+	if (*complete || *minimum > 0) && (!result.Complete || result.Executable == 0) {
 		return fmt.Errorf("整體覆蓋率尚未完整量測")
 	}
-	covered := new(big.Int).Mul(big.NewInt(int64(evidence.Result.Covered)), big.NewInt(100))
-	threshold := new(big.Int).Mul(big.NewInt(int64(evidence.Result.Executable)), big.NewInt(int64(*minimum)))
+	covered := new(big.Int).Mul(big.NewInt(int64(result.Covered)), big.NewInt(100))
+	threshold := new(big.Int).Mul(big.NewInt(int64(result.Executable)), big.NewInt(int64(*minimum)))
 	if covered.Cmp(threshold) < 0 {
 		return fmt.Errorf("整體覆蓋率低於 %d%%", *minimum)
 	}
-	fmt.Fprintf(out, "整體覆蓋率證據驗證通過：%s，完整=%t，命中=%d，可執行=%d\n", evidence.Commit, evidence.Result.Complete, evidence.Result.Covered, evidence.Result.Executable)
+	label := "整體覆蓋率"
+	if *runtimeScope {
+		label = "PowerShell／C# runtime 覆蓋率"
+	}
+	fmt.Fprintf(out, "%s證據驗證通過：%s，完整=%t，命中=%d，可執行=%d\n", label, commit, result.Complete, result.Covered, result.Executable)
 	return nil
 }
 func main() {

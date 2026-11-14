@@ -160,9 +160,10 @@ func runContext(ctx context.Context) error {
 	attempt := flag.Int("attempt", 0, "run attempt")
 	id := flag.String("id", "", "artifact ID")
 	digest := flag.String("digest", "", "sha256 digest")
+	kind := flag.String("kind", "native", "artifact kind: native or container")
 	dest := flag.String("dest", "", "new output directory")
 	flag.Parse()
-	if !regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`).MatchString(*repo) || !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(*runID) || !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(*id) || *attempt < 1 || !regexp.MustCompile(`^sha256:[a-f0-9]{64}$`).MatchString(*digest) || *dest == "" {
+	if !regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`).MatchString(*repo) || !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(*runID) || !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(*id) || *attempt < 1 || !regexp.MustCompile(`^sha256:[a-f0-9]{64}$`).MatchString(*digest) || (*kind != "native" && *kind != "container") || *dest == "" {
 		return errors.New("invalid artifact identity")
 	}
 	token := os.Getenv("GH_TOKEN")
@@ -192,7 +193,7 @@ func runContext(ctx context.Context) error {
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("artifact metadata HTTP %d", resp.StatusCode)
 	}
-	if err := validateMetadata(resp.Body, *id, *runID, *attempt, *digest); err != nil {
+	if err := validateMetadata(resp.Body, *id, *runID, *attempt, *digest, *kind); err != nil {
 		return err
 	}
 	data, err := download(ctx, client, base+"/zip", token, strings.TrimPrefix(*digest, "sha256:"), 3, time.Second)
@@ -214,7 +215,7 @@ func runContext(ctx context.Context) error {
 	return os.Rename(tmp, *dest)
 }
 
-func validateMetadata(body io.Reader, id, runID string, attempt int, digest string) error {
+func validateMetadata(body io.Reader, id, runID string, attempt int, digest, kind string) error {
 	var meta struct {
 		ID       int64  `json:"id"`
 		Name     string `json:"name"`
@@ -236,7 +237,13 @@ func validateMetadata(body io.Reader, id, runID string, attempt int, digest stri
 	if err != nil {
 		return errors.New("invalid run ID")
 	}
-	if meta.ID != expectedID || meta.Workflow.ID != expectedRun || meta.Name != "windows-test-reports-"+runID+"-"+strconv.Itoa(attempt) || meta.Expired == nil || *meta.Expired || meta.Digest != digest || meta.Size == nil || *meta.Size <= 0 || *meta.Size > maxArchive {
+	prefix := "windows-test-reports-"
+	if kind == "container" {
+		prefix = "docker-test-reports-"
+	} else if kind != "native" {
+		return errors.New("invalid artifact kind")
+	}
+	if meta.ID != expectedID || meta.Workflow.ID != expectedRun || meta.Name != prefix+runID+"-"+strconv.Itoa(attempt) || meta.Expired == nil || *meta.Expired || meta.Digest != digest || meta.Size == nil || *meta.Size <= 0 || *meta.Size > maxArchive {
 		return errors.New("artifact source or digest mismatch")
 	}
 	return nil

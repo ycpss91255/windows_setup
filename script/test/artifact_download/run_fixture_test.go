@@ -86,6 +86,60 @@ func TestRunDownloadsOfficialRedirectWithoutToken(t *testing.T) {
 	}
 }
 
+func TestRunDownloadsContainerWithBoundedRetry(t *testing.T) {
+	var b bytes.Buffer
+	z := zip.NewWriter(&b)
+	w, _ := z.Create("summary.json")
+	_, _ = w.Write([]byte(`{}`))
+	if err := z.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data := b.Bytes()
+	sum := sha256.Sum256(data)
+	digest := fmt.Sprintf("sha256:%x", sum)
+	calls := 0
+	leaked := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		switch r.URL.Path {
+		case "/repos/example/repo/actions/artifacts/456":
+			fmt.Fprintf(w, `{"id":456,"name":"docker-test-reports-123-1","digest":%q,"size_in_bytes":100,"expired":false,"workflow_run":{"id":123}}`, digest)
+		case "/repos/example/repo/actions/artifacts/456/zip":
+			if calls == 2 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			http.Redirect(w, r, "https://storage.example.test/content", http.StatusFound)
+		case "/content":
+			leaked = r.Header.Get("Authorization") != ""
+			_, _ = w.Write(data)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	u, _ := url.Parse(server.URL)
+	oldTransport := http.DefaultTransport
+	http.DefaultTransport = fixtureTransport{u, server.Client().Transport}
+	defer func() { http.DefaultTransport = oldTransport }()
+	oldFlags, oldArgs := flag.CommandLine, os.Args
+	defer func() { flag.CommandLine = oldFlags; os.Args = oldArgs }()
+	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
+	flag.CommandLine.SetOutput(io.Discard)
+	dest := filepath.Join(t.TempDir(), "result")
+	os.Args = []string{"artifact_download", "--repo", "example/repo", "--run", "123", "--attempt", "1", "--id", "456", "--digest", digest, "--kind", "container", "--dest", dest}
+	t.Setenv("GH_TOKEN", "fixture-token")
+	if err := run(); err != nil {
+		t.Fatalf("production run rejected redirect: %v", err)
+	}
+	if leaked || calls != 4 {
+		t.Fatalf("calls=%d leaked=%v", calls, leaked)
+	}
+	if got, err := os.ReadFile(filepath.Join(dest, "summary.json")); err != nil || strings.TrimSpace(string(got)) != "{}" {
+		t.Fatalf("output invalid: %v", err)
+	}
+}
+
 func TestRunRejectsOversizeMetadataBeforeDownload(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
 	zipCalls := 0

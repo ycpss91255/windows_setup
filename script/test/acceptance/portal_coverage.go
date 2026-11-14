@@ -18,7 +18,11 @@ func ValidatePortalCoverage(visible string, summary []byte) error {
 		return e
 	}
 	if metadata.SchemaVersion == 2 {
-		if !strings.Contains(visible, "整體覆蓋率") {
+		label := "整體覆蓋率"
+		if metadata.RepoCoverage != nil && metadata.RepoCoverage.SchemaVersion == c.RuntimeSchemaVersion {
+			label = "PowerShell/C# runtime 覆蓋率"
+		}
+		if !strings.Contains(visible, label) {
 			return fmt.Errorf("首頁缺少整體覆蓋率標示")
 		}
 		overall := metadata.RepoCoverage

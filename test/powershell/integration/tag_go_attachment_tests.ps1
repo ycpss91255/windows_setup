@@ -65,24 +65,11 @@ foreach($mutation in @('commit','run','profile','missing_profile','missing_metad
  }
  [IO.File]::WriteAllText($path,($c|ConvertTo-Json -Depth 8));if($mutation -eq 'missing_metadata'){Remove-Item -LiteralPath $path};Reject-Unchanged $case ('invalid Tag evidence is rejected: '+$mutation)
 }
-# Execute the actual producer step for both events, using only synthetic local reports.
+# Current CI requires Go tests while runtime coverage does not require Go evidence.
 $workflow=[IO.File]::ReadAllText((Join-Path $root '.github/workflows/windows_tests.yml'))
-$measureAt=$workflow.IndexOf('measure_go_coverage.ps1');$attachAt=$workflow.IndexOf('attach_go_coverage.ps1');$repoAt=$workflow.IndexOf('run_repo_coverage.ps1');$publishAt=$workflow.IndexOf('publish_quality_release.ps1')
-Assert ($measureAt -ge 0 -and $measureAt -lt $attachAt -and $attachAt -lt $repoAt -and $repoAt -lt $publishAt) 'workflow measures Go before attachment and preserves strict repo validation before publication'
-$step=[regex]::Match($workflow,'(?ms)^      - name: 附加分項 Go 證據\r?\n(?<body>.*?)(?=^      - name:|\z)').Groups['body'].Value
-Assert ($step -and $step -notmatch '(?m)^        if:') 'both branch and Tag events execute the Go producer step'
-$run=[regex]::Match($step,'(?ms)^        run: \|\r?\n(?<run>.*)').Groups['run'].Value -replace '(?m)^          ',''
-$oldTemp=$env:RUNNER_TEMP;$oldType=$env:GITHUB_REF_TYPE
-Push-Location $root
-try{
- foreach($event in @('branch','tag')){
-  $kind=if($event -eq 'tag'){'Release'}else{'Branch'};$case=New-Case ('workflow_'+$event) $kind -RestoredStage
-  $env:RUNNER_TEMP=$case.Directory;$env:GITHUB_REF_TYPE=$event
-  & ([scriptblock]::Create($run))
-  $report=Get-Content -LiteralPath $case.Summary -Raw|ConvertFrom-Json
-  Assert ($report.GoCoverage.Covered -eq 8 -and (Test-Path -LiteralPath (Join-Path $case.Public 'go_coverage.out'))) ('actual workflow run step attaches metadata and profile for '+$event)
- }
-}finally{$env:RUNNER_TEMP=$oldTemp;$env:GITHUB_REF_TYPE=$oldType;Pop-Location}
+$testsAt=$workflow.IndexOf("'test','-mod=vendor','-count=1','./...'");$packAt=$workflow.IndexOf("'native-stage-pack','--runtime'");$repoAt=$workflow.IndexOf('run_repo_coverage.ps1');$publishAt=$workflow.IndexOf('publish_quality_release.ps1')
+Assert ($testsAt -ge 0 -and $testsAt -lt $packAt -and $packAt -lt $repoAt -and $repoAt -lt $publishAt) 'workflow requires Go tests before runtime evidence and publication'
+Assert (-not $workflow.Contains('attach_go_coverage.ps1') -and -not $workflow.Contains('measure_go_coverage.ps1')) 'current workflow does not require Go coverage attachment'
 # Complete the actual local Tag producer -> strict repo attachment -> publisher
 # validation path. Coverage is an explicit tiny synthetic fixture, never CI proof.
 $tool=Join-Path $fixture 'repo_coverage_tool.exe'
@@ -105,11 +92,8 @@ $global:tagGoPublisherReached=$false
 function gh {$global:tagGoPublisherReached=$true;throw 'LOCAL_GH_BOUNDARY_ONLY'}
 Assert ((Get-Command gh).CommandType -eq 'Function') '本機發布邊界必須使用 mock gh'
 $boundary=$false
-try{& (Join-Path $root 'script/report/publish_quality_release.ps1') -PublicDirectory $flow.Public -Version v1.2.3 -Commit ('a'*40) -NotesPath (Join-Path $flow.Public 'summary.md') -Repository example/repo -CoverageToolPath $tool -DriverAssetManifestPath $emptyDrivers}catch{$boundary=$_.Exception.Message -ceq 'LOCAL_GH_BOUNDARY_ONLY'}finally{Remove-Item Function:\gh}
-Assert ($boundary -and $global:tagGoPublisherReached) 'actual publisher passes local repo and Go verification and stops at a fixture GitHub boundary'
-$manifest=Get-Content -LiteralPath (Join-Path $flow.Public 'quality-manifest.json') -Raw|ConvertFrom-Json
-$profileRecord=@($manifest.Files|Where-Object Name -ceq 'go_coverage.out')
-Assert ($profileRecord.Count -eq 1 -and $profileRecord[0].SHA256 -ceq $joined.GoCoverage.ProfileSHA256) 'publisher local manifest includes the exact original Go profile digest'
+try{& (Join-Path $root 'script/report/publish_quality_release.ps1') -PublicDirectory $flow.Public -Version v1.2.3 -Commit ('a'*40) -NotesPath (Join-Path $flow.Public 'summary.md') -Repository example/repo -CoverageToolPath $tool -DriverAssetManifestPath $emptyDrivers}catch{$boundary=$_.Exception.Message -like '*舊口徑僅供歷史讀取*'}finally{Remove-Item Function:\gh}
+Assert ($boundary -and -not $global:tagGoPublisherReached) 'current publisher rejects historical coverage before the GitHub boundary'
 # Exercise the previously missing official requirements gate, not just the PS
 # attachment and publisher. This synthetic profile inventories every owned Go
 # file so the real CLI's denominator guard remains active; it is not CI data.
@@ -141,12 +125,23 @@ $gateTool=Join-Path $fixture 'requirements_gate.exe'
 Push-Location $root
 try{& go.exe build -mod=vendor -o $gateTool ./script/test/requirements_gate;if($LASTEXITCODE){throw 'fixture requirements CLI build failed'}}finally{Pop-Location}
 $priorPreference=$ErrorActionPreference
-try{$ErrorActionPreference='Continue';& $gateTool --artifact-dir $gatePublic --source-root $root --expected-sha ('a'*40) --expected-run-url 'https://github.com/example/repo/actions/runs/123' *> (Join-Path $fixture 'tag_requirements.private.log');$gateExit=$LASTEXITCODE}finally{$ErrorActionPreference=$priorPreference}
-Assert ($gateExit -eq 0) 'official requirements CLI accepts fresh schema2 Tag evidence after native Go and repo attachment'
+try{$ErrorActionPreference='Continue';& $gateTool --tests-only --artifact-dir $gatePublic --source-root $root --expected-sha ('a'*40) --expected-run-url 'https://github.com/example/repo/actions/runs/123' *> (Join-Path $fixture 'tag_requirements.private.log');$gateExit=$LASTEXITCODE}finally{$ErrorActionPreference=$priorPreference}
+Assert ($gateExit -eq 0) 'tests-only CLI accepts valid Tag report without a Go coverage gate'
+$legacySource=Join-Path $fixture 'historical_source';[void][IO.Directory]::CreateDirectory($legacySource)
+foreach($file in $owned){$target=Join-Path $legacySource $file;[void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target));[IO.File]::WriteAllText($target,"package fixture`n")}
+[void][IO.Directory]::CreateDirectory((Join-Path $legacySource '.github/workflows'))
+[IO.File]::WriteAllText((Join-Path $legacySource '.github/workflows/windows_tests.yml'),'name: fixture')
+[IO.File]::WriteAllText((Join-Path $legacySource 'init.cmd'),'@echo off')
+[IO.File]::WriteAllText((Join-Path $legacySource 'windows.cmd'),'@echo off')
+[IO.File]::WriteAllText((Join-Path $legacySource 'readme.md'),"init.cmd windows.cmd Shift+F10 -AfterRestart -VerifyOnly`n![CI](https://github.com/example/repo/actions/workflows/windows_tests.yml/badge.svg)")
+& git -C $legacySource init -q;if($LASTEXITCODE -ne 0){throw 'historical fixture git init failed'}
+& git -C $legacySource add .;if($LASTEXITCODE -ne 0){throw 'historical fixture git add failed'}
+try{$ErrorActionPreference='Continue';& $gateTool --historical-go --artifact-dir $gatePublic --source-root $legacySource --expected-sha ('a'*40) --expected-run-url 'https://github.com/example/repo/actions/runs/123' *> (Join-Path $fixture 'historical_requirements.private.log');$gateExit=$LASTEXITCODE}finally{$ErrorActionPreference=$priorPreference}
+Assert ($gateExit -eq 0) 'explicit historical mode still validates the original Go coverage contract'
 $global:tagGoPublisherReached=$false
 function gh {$global:tagGoPublisherReached=$true;throw 'LOCAL_TAG_GATE_GH_BOUNDARY_ONLY'}
 Assert ((Get-Command gh).CommandType -eq 'Function') 'Tag 發布邊界必須使用 mock gh'
 $boundary=$false
-try{& (Join-Path $root 'script/report/publish_quality_release.ps1') -PublicDirectory $gatePublic -Version v1.2.3 -Commit ('a'*40) -NotesPath (Join-Path $gatePublic 'summary.md') -Repository example/repo -CoverageToolPath $tool -DriverAssetManifestPath $emptyDrivers}catch{$boundary=$_.Exception.Message -ceq 'LOCAL_TAG_GATE_GH_BOUNDARY_ONLY'}finally{Remove-Item Function:\gh}
-Assert ($boundary -and $global:tagGoPublisherReached) 'fresh Tag report passes official Go gate and strict publisher up to the mocked external boundary'
+try{& (Join-Path $root 'script/report/publish_quality_release.ps1') -PublicDirectory $gatePublic -Version v1.2.3 -Commit ('a'*40) -NotesPath (Join-Path $gatePublic 'summary.md') -Repository example/repo -CoverageToolPath $tool -DriverAssetManifestPath $emptyDrivers}catch{$boundary=$_.Exception.Message -like '*舊口徑僅供歷史讀取*'}finally{Remove-Item Function:\gh}
+Assert ($boundary -and -not $global:tagGoPublisherReached) 'historical evidence cannot become a new release even when its former gate passes'
 $global:LASTEXITCODE=0

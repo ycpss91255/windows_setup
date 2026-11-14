@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -27,6 +28,7 @@ import (
 )
 
 var nativeNames = []string{"index.html", "summary.json", "summary.md", "junit.xml", "unit.svg", "integration.svg", "coverage.svg", "repo_coverage.json", "coverage_inventory.json", "coverage.xml", "go_coverage.json", "go_coverage.out", "go_coverage.svg"}
+var nativeRuntimeNames = []string{"index.html", "summary.json", "summary.md", "junit.xml", "unit.svg", "integration.svg", "coverage.svg", "repo_coverage.json", "coverage_inventory.json", "coverage.xml"}
 var containerNames = []string{"index.html", "summary.json", "summary.md", "junit.xml", "unit.svg", "integration.svg", "coverage.svg"}
 
 const provenanceNote = "CI selects exact run and attempt artifacts; this manifest records supplied context and is not an independent provenance attestation."
@@ -39,8 +41,14 @@ type fileRecord struct {
 	Size   int64  `json:"size"`
 	SHA256 string `json:"sha256"`
 }
+
+//go:embed overview.html
+var overviewTemplate string
+
 type bundleManifest struct {
+	Presentation  string       `json:"presentation,omitempty"`
 	SchemaVersion int          `json:"schema_version"`
+	Scope         string       `json:"scope,omitempty"`
 	Version       string       `json:"version"`
 	Commit        string       `json:"commit"`
 	RunURL        string       `json:"run_url"`
@@ -231,8 +239,12 @@ func validateReports(o options, native, container map[string][]byte) error {
 		}
 	}
 	r := reportReader(native)
-	if _, e := a.ValidateRepoCoverageReport(r, native["summary.json"], o.commit, o.run, true); e != nil {
+	repo, e := a.ValidateRepoCoverageReport(r, native["summary.json"], o.commit, o.run, true)
+	if e != nil {
 		return e
+	}
+	if repo.SchemaVersion == c.RuntimeSchemaVersion {
+		return c.ValidateRuntimeInventory(o.source, native["coverage_inventory.json"])
 	}
 	if e := c.ValidateInventory(o.source, native["coverage_inventory.json"]); e != nil {
 		return e
@@ -257,7 +269,7 @@ func sourceClean(o options) error {
 	}
 	return nil
 }
-func rootDocuments(version string, native, container map[string][]byte) ([]byte, []byte) {
+func legacyRootDocuments(version string, native, container map[string][]byte) ([]byte, []byte) {
 	var scope strings.Builder
 	fmt.Fprintf(&scope, "# 版本測試報表\n\n版本：%s\n\n同次 Windows 原生與容器執行；CI 選取指定執行與重試的工件，這不是獨立來源認證。\n", version)
 	for i, m := range []map[string][]byte{native, container} {
@@ -270,6 +282,9 @@ func rootDocuments(version string, native, container map[string][]byte) ([]byte,
 			link = "windows_container/index.html"
 		}
 		fmt.Fprintf(&scope, "\n## %s\n\n- 版本：%s\n- Commit：%s\n- 執行：%s\n- 量測時間：%s\n- 環境：%s\n- Coverage：%s\n- 測試套件：%d；斷言：%d（通過 %d，失敗 %d）\n- [完整原始報表](%s)\n", label, strconv.Quote(r.Version), strconv.Quote(r.Commit), strconv.Quote(r.RunUrl), strconv.Quote(r.MeasuredAt), strconv.Quote(r.Environment), strconv.Quote(r.Coverage), r.Totals.SuitesExecuted, r.Totals.AssertionsExecuted, r.Totals.AssertionsPassed, r.Totals.AssertionsFailed, link)
+		if r.RepoCoverage != nil && r.RepoCoverage.SchemaVersion == c.RuntimeSchemaVersion {
+			fmt.Fprintln(&scope, "- 覆蓋範圍：PowerShell/C# runtime 可執行行（不含 CMD 與 Go）")
+		}
 		for _, check := range r.Checks {
 			if check.Layer != "Unit" && check.Layer != "Integration" {
 				continue
@@ -350,6 +365,10 @@ func uniqueJSON(data []byte) error {
 }
 
 func export(o options) error {
+	return exportWithScope(o, false)
+}
+
+func exportWithScope(o options, current bool) error {
 	runID, e := validateIdentity(o)
 	if e != nil {
 		return e
@@ -382,9 +401,27 @@ func export(o options) error {
 	if e = sourceClean(o); e != nil {
 		return e
 	}
-	native, e := loadReport(o.native, nativeNames)
+	entries, e := os.ReadDir(o.native)
 	if e != nil {
 		return e
+	}
+	namesForNative := nativeNames
+	if len(entries) == len(nativeRuntimeNames) {
+		namesForNative = nativeRuntimeNames
+	}
+	native, e := loadReport(o.native, namesForNative)
+	if e != nil {
+		return e
+	}
+	var header struct{ RepoCoverage struct{ SchemaVersion int } }
+	if e = json.Unmarshal(native["summary.json"], &header); e != nil {
+		return e
+	}
+	if (header.RepoCoverage.SchemaVersion == c.RuntimeSchemaVersion) != (len(namesForNative) == len(nativeRuntimeNames)) {
+		return errors.New("native report scope and file set differ")
+	}
+	if current && header.RepoCoverage.SchemaVersion != c.RuntimeSchemaVersion {
+		return errors.New("current export requires runtime coverage scope")
 	}
 	container, e := loadReport(o.container, containerNames)
 	if e != nil {
@@ -400,13 +437,17 @@ func export(o options) error {
 	for n, b := range container {
 		files["windows_container/"+n] = b
 	}
-	files["index.html"], files["report_scope.md"] = rootDocuments(o.version, native, container)
+	files["index.html"], files["report_scope.md"] = overviewRootDocuments(o.version, native, container)
 	names := make([]string, 0, len(files))
 	for n := range files {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	m := bundleManifest{SchemaVersion: 1, Version: o.version, Commit: o.commit, RunURL: o.run, RunAttempt: o.attempt, Provenance: provenanceNote}
+	m := bundleManifest{Presentation: overviewPresentation, SchemaVersion: 1, Version: o.version, Commit: o.commit, RunURL: o.run, RunAttempt: o.attempt, Provenance: provenanceNote}
+	if header.RepoCoverage.SchemaVersion == c.RuntimeSchemaVersion {
+		m.SchemaVersion = 2
+		m.Scope = c.RuntimeScope
+	}
 	for _, n := range names {
 		sum := sha256.Sum256(files[n])
 		m.Files = append(m.Files, fileRecord{Path: n, Size: int64(len(files[n])), SHA256: hex.EncodeToString(sum[:])})
@@ -547,7 +588,11 @@ func verify(args []string) error {
 		return e
 	}
 	allowed := map[string]bool{"index.html": true, "report_scope.md": true, "manifest.json": true}
-	for _, n := range nativeNames {
+	namesForNative := nativeNames
+	if len(z.File) == 3+len(nativeRuntimeNames)+len(containerNames) {
+		namesForNative = nativeRuntimeNames
+	}
+	for _, n := range namesForNative {
 		allowed["native/"+n] = true
 	}
 	for _, n := range containerNames {
@@ -604,7 +649,8 @@ func verify(args []string) error {
 			return e
 		}
 	}
-	if m.SchemaVersion != 1 || m.Version != o.version || m.Commit != o.commit || m.RunURL != o.run || m.RunAttempt != o.attempt || m.Provenance != provenanceNote || len(m.Files) != len(allowed)-1 {
+	validScope := m.SchemaVersion == 1 && m.Scope == "" && len(namesForNative) == len(nativeNames) || m.SchemaVersion == 2 && m.Scope == c.RuntimeScope && len(namesForNative) == len(nativeRuntimeNames)
+	if !validScope || m.Version != o.version || m.Commit != o.commit || m.RunURL != o.run || m.RunAttempt != o.attempt || m.Provenance != provenanceNote || len(m.Files) != len(allowed)-1 {
 		return errors.New("manifest identity mismatch")
 	}
 	manifestSeen := map[string]bool{}
@@ -620,16 +666,32 @@ func verify(args []string) error {
 		}
 	}
 	native, container := map[string][]byte{}, map[string][]byte{}
-	for _, n := range nativeNames {
+	for _, n := range namesForNative {
 		native[n] = files["native/"+n]
 	}
 	for _, n := range containerNames {
 		container[n] = files["windows_container/"+n]
 	}
+	var reportHeader struct{ RepoCoverage struct{ SchemaVersion int } }
+	if e = json.Unmarshal(native["summary.json"], &reportHeader); e != nil {
+		return e
+	}
+	if (m.SchemaVersion == 2) != (reportHeader.RepoCoverage.SchemaVersion == c.RuntimeSchemaVersion) {
+		return errors.New("manifest and report scope differ")
+	}
 	if e = validateReports(o, native, container); e != nil {
 		return e
 	}
-	index, scope := rootDocuments(o.version, native, container)
+	format, e := presentationFormat(files["manifest.json"], historical)
+	if e != nil {
+		return e
+	}
+	var index, scope []byte
+	if format == "legacy" {
+		index, scope = legacyRootDocuments(o.version, native, container)
+	} else {
+		index, scope = overviewRootDocuments(o.version, native, container)
+	}
 	if string(files["index.html"]) != string(index) || string(files["report_scope.md"]) != string(scope) {
 		return errors.New("archive index or scope mismatch")
 	}
@@ -638,7 +700,7 @@ func verify(args []string) error {
 		if historical {
 			origin = "immutable_archive_manifest"
 		}
-		return writeVerifiedOutput(outputDir, archiveBytes, files, o, origin)
+		return writeVerifiedOutput(outputDir, archiveBytes, files, o, origin, m.Scope)
 	}
 	return nil
 }
@@ -652,7 +714,7 @@ func sameOutputParent(parent, resolved, platform string) bool {
 }
 
 // writeVerifiedOutput only publishes bytes after every archive and report check passes.
-func writeVerifiedOutput(output string, archive []byte, files map[string][]byte, o options, origin string) error {
+func writeVerifiedOutput(output string, archive []byte, files map[string][]byte, o options, origin, scope string) error {
 	if _, err := os.Lstat(output); err == nil || !os.IsNotExist(err) {
 		return errors.New("output must not exist")
 	}
@@ -685,7 +747,11 @@ func writeVerifiedOutput(output string, archive []byte, files map[string][]byte,
 	}
 	digest := sha256.Sum256(archive)
 	summary := sha256.Sum256(files["native/summary.json"])
-	profile := sha256.Sum256(files["native/go_coverage.out"])
+	profileHash := ""
+	if profileBytes, ok := files["native/go_coverage.out"]; ok {
+		profile := sha256.Sum256(profileBytes)
+		profileHash = hex.EncodeToString(profile[:])
+	}
 	metadata := struct {
 		ContextOrigin string `json:"context_origin"`
 		ArchiveSHA256 string `json:"archive_sha256"`
@@ -695,8 +761,9 @@ func writeVerifiedOutput(output string, archive []byte, files map[string][]byte,
 		RunURL        string `json:"run_url"`
 		RunAttempt    int    `json:"run_attempt"`
 		SummarySHA256 string `json:"summary_sha256"`
-		ProfileSHA256 string `json:"profile_sha256"`
-	}{origin, hex.EncodeToString(digest[:]), int64(len(archive)), o.version, o.commit, o.run, o.attempt, hex.EncodeToString(summary[:]), hex.EncodeToString(profile[:])}
+		ProfileSHA256 string `json:"profile_sha256,omitempty"`
+		CoverageScope string `json:"coverage_scope,omitempty"`
+	}{origin, hex.EncodeToString(digest[:]), int64(len(archive)), o.version, o.commit, o.run, o.attempt, hex.EncodeToString(summary[:]), profileHash, scope}
 	data, err := json.Marshal(metadata)
 	if err != nil {
 		return err
@@ -710,6 +777,9 @@ func run() error {
 	if len(os.Args) < 2 {
 		return errors.New("expected export or verify command")
 	}
+	if os.Args[1] == "validate-main-pair" {
+		return validateMainPairCommand(os.Args[2:])
+	}
 	if os.Args[1] == "verify" {
 		return verify(os.Args[2:])
 	}
@@ -720,7 +790,7 @@ func run() error {
 	if e != nil {
 		return e
 	}
-	return export(o)
+	return exportWithScope(o, true)
 }
 func main() {
 	if e := run(); e != nil {

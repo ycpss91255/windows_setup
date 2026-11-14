@@ -4,7 +4,7 @@ $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
 function Assert([bool]$Condition,[string]$Name){Write-Host ('@@ASSERT@@'+(@{Name=$Name;Passed=$Condition}|ConvertTo-Json -Compress));if(-not $Condition){throw $Name}}
 . (Join-Path $root 'test/powershell/helpers/report_bundle_fixture.ps1')
 $fixturePath=Join-Path ([IO.Path]::GetTempPath()) ('publisher_bundle_fixture_'+[guid]::NewGuid().ToString('N'))
-$bundleFixture=New-TestReportBundleFixture -RepositoryRoot $root -Destination $fixturePath
+$bundleFixture=New-TestReportBundleFixture -RepositoryRoot $root -Destination $fixturePath -Runtime
 $data=$bundleFixture.Metadata
 Assert ($data.kind -ceq 'Synthetic') '僅使用標明 Synthetic 的受控工件'
 $source=$bundleFixture.Source

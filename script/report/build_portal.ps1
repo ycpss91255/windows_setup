@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][string]$CatalogPath,[Parameter(Mandatory=$true)][string]$OutputDirectory,[string]$MainSnapshotPath,[switch]$RequireGoCoverage,[string]$CoverageToolPath=$env:WINDOWS_SETUP_COVERAGE_TOOL,[switch]$Preview)
+param([Parameter(Mandatory=$true)][string]$CatalogPath,[Parameter(Mandatory=$true)][string]$OutputDirectory,[string]$MainSnapshotPath,[string]$ContainerSnapshotPath,[string]$BundleToolPath=$env:WINDOWS_SETUP_REPORT_BUNDLE_TOOL,[switch]$RequireGoCoverage,[string]$CoverageToolPath=$env:WINDOWS_SETUP_COVERAGE_TOOL,[switch]$Preview)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../test/test_report.ps1')
 . (Join-Path $PSScriptRoot 'portal.ps1')
@@ -39,20 +39,38 @@ foreach($entry in $catalog){
  $versions.Add([pscustomobject]@{Version=$entry.Version;Commit=$entry.Commit;Status=$state;Reason=$reason;Path=('versions/'+$entry.Version+'/index.html');ReleaseUrl=$entry.ReleaseUrl;MeasuredAt=$(if($evidence){$evidence.Snapshot.MeasuredAt}else{'Unknown'});Digest=$(if($evidence -and $evidence.PSObject.Properties['SnapshotDigest']){$evidence.SnapshotDigest}else{$entry.SnapshotDigest});ArchiveDigest=$(if($evidence -and $evidence.PSObject.Properties['ArchiveDigest']){$evidence.ArchiveDigest}else{''})})
  } finally {if($evidence -and $evidence.PSObject.Properties['TemporaryOwner']){Remove-ReportOwnedTemp -Handle $evidence.TemporaryOwner}}
 }
-$mainStatus='Unknown'
+$mainStatus='Unknown';$paired=$false
+if(-not $Preview -and (-not $ContainerSnapshotPath -or -not(Test-Path -LiteralPath $ContainerSnapshotPath -PathType Leaf))){throw '正式 Pages 需要同次容器報告。'}
  if(-not $Preview -and (-not $MainSnapshotPath -or -not(Test-Path -LiteralPath $MainSnapshotPath -PathType Leaf))){throw '正式Pages需要本次完整報告。'}
 if($RequireGoCoverage -and (-not $MainSnapshotPath -or -not(Test-Path -LiteralPath $MainSnapshotPath -PathType Leaf))){throw 'main 發布必須提供 Go 覆蓋率報告。'}
 if($MainSnapshotPath -and (Test-Path -LiteralPath $MainSnapshotPath)){
  $main=Get-Content -LiteralPath $MainSnapshotPath -Raw -Encoding UTF8|ConvertFrom-Json
  Assert-TestReportSnapshot -Report $main
  if($main.RefType -cne 'Branch' -or $main.RefName -cne 'main' -or $main.SourceState -cne 'Clean' -or $main.RequestedLayer -cne 'All'){throw 'main 品質來源標記不符。'}
- if(-not $Preview){Assert-RepoCoverageArtifacts -Report $main -Directory (Split-Path -Parent $MainSnapshotPath) -CoverageToolPath $CoverageToolPath -RequireComplete}
+ if(-not $Preview){
+  if(-not $main.PSObject.Properties['RepoCoverage'] -or $main.RepoCoverage.SchemaVersion -ne 2 -or $main.RepoCoverage.Metric -cne 'runtime-powershell-csharp-executable-lines-v2' -or $main.RepoCoverage.Scope -cne 'core-modules-powershell-and-modules-native-csharp'){throw '正式主線必須使用 PowerShell/C# runtime 覆蓋範圍。'}
+  Assert-RepoCoverageArtifacts -Report $main -Directory (Split-Path -Parent $MainSnapshotPath) -CoverageToolPath $CoverageToolPath -RequireComplete
+ }
  $hasRepo=$null -ne $main.PSObject.Properties['RepoCoverage']
  if($Preview -and $hasRepo){Assert-RepoCoverageArtifacts -Report $main -Directory (Split-Path -Parent $MainSnapshotPath) -CoverageToolPath $CoverageToolPath}
  $hasGo=$null -ne $main.PSObject.Properties['GoCoverage']
  if($RequireGoCoverage -and -not $hasGo){throw 'main 發布缺少 Go 覆蓋率。'}
  if($hasGo){Assert-GoCoverageProfile -Coverage $main.GoCoverage -Directory (Split-Path -Parent $MainSnapshotPath)}
- Write-SnapshotView $main (Join-Path $output 'main');$mainStatus='Available'
+ if($ContainerSnapshotPath){
+  if(-not(Test-Path -LiteralPath $ContainerSnapshotPath -PathType Leaf) -or -not $BundleToolPath -or -not(Test-Path -LiteralPath $BundleToolPath -PathType Leaf)){throw '缺少容器報告或雙環境驗證工具。'}
+  $nativeDir=Split-Path -Parent $MainSnapshotPath;$containerDir=Split-Path -Parent $ContainerSnapshotPath
+  & $BundleToolPath validate-main-pair --native-dir $nativeDir --container-dir $containerDir --commit $main.Commit --run-url $main.RunUrl
+  if($LASTEXITCODE -ne 0){throw '同次雙環境報告驗證失敗。'}
+  foreach($pair in @(@($nativeDir,'native'),@($containerDir,'windows_container'))){$destination=Join-Path $output $pair[1];New-Item -ItemType Directory $destination|Out-Null;Get-ChildItem -LiteralPath $pair[0] -File|ForEach-Object {Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $destination $_.Name)}}
+  $nativeCopy=Join-Path $output 'native';$containerCopy=Join-Path $output 'windows_container'
+  & $BundleToolPath validate-main-pair --native-dir $nativeCopy --container-dir $containerCopy --commit $main.Commit --run-url $main.RunUrl
+  if($LASTEXITCODE -ne 0){throw '複製後的雙環境報告驗證失敗。'}
+  $main=Get-Content -LiteralPath (Join-Path $nativeCopy 'summary.json') -Raw -Encoding UTF8|ConvertFrom-Json
+  $container=Get-Content -LiteralPath (Join-Path $containerCopy 'summary.json') -Raw -Encoding UTF8|ConvertFrom-Json
+  Assert-RepoCoverageArtifacts -Report $main -Directory $nativeCopy -CoverageToolPath $CoverageToolPath -RequireComplete
+  $paired=$true
+ }
+ Write-SnapshotView $main (Join-Path $output 'main') -OverviewPresentation;$mainStatus='Available'
  if($hasRepo){foreach($name in @('repo_coverage.json','coverage_inventory.json','coverage.xml')){Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $MainSnapshotPath) $name) -Destination (Join-Path $output ('main/'+$name))}}
  if($hasGo){Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $MainSnapshotPath) 'go_coverage.out') -Destination (Join-Path $output 'main/go_coverage.out')}
 }
@@ -70,9 +88,17 @@ if($mainStatus -eq 'Available'){
  $mainLink='<h2>'+$headline+'</h2><p>檢查對象：開發主線 main · 提交 <code>'+[Net.WebUtility]::HtmlEncode($shortCommit)+'</code><br>檢查時間：'+[Net.WebUtility]::HtmlEncode($stamp)+'</p><p>已執行程式邏輯檢查（單元測試），以及隔離環境中的模組配合檢查（整合測試）。</p><p><a class="button" href="main/index.html">查看本次檢查明細</a></p>'
 }
 $coverageNotice='尚未提供完整量測。'
+$coverageHeading='整體覆蓋率'
  if($mainStatus -eq 'Available' -and $hasRepo){$coverageNotice=[Net.WebUtility]::HtmlEncode((Get-RepoCoverageSummary $main.RepoCoverage))}
+ if($mainStatus -eq 'Available' -and $hasRepo -and (Get-RepoCoverageScopeLabel $main.RepoCoverage) -eq 'PowerShell/C# runtime'){$coverageHeading='PowerShell/C# runtime 覆蓋率'}
 $html=@"
-<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Windows 設定工具｜測試結果</title><style>body{font:16px/1.65 system-ui;max-width:880px;margin:32px auto;padding:0 20px;color:#17202a}h1{font-size:28px}h2{font-size:22px}section{border-top:1px solid #dce3ea;padding:16px 0}a{color:#1558ad}li{margin:8px 0}code{font-size:14px}</style><body><h1>Windows 設定工具｜測試結果</h1><section>$mainLink</section><section><h2>整體覆蓋率</h2><p>$coverageNotice</p></section><section><h2>使用與下載</h2><p><a href="https://github.com/ycpss91255/windows_setup/blob/main/readme.md">USB 安裝與使用步驟</a> · <a href="https://github.com/ycpss91255/windows_setup/releases">下載 Release</a> · <a href="https://github.com/ycpss91255/windows_setup/actions/workflows/windows_tests.yml">Actions 執行紀錄</a></p></section><section><h2>版本紀錄</h2><ul>$links</ul></section></body></html>
+<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Windows 設定工具｜測試結果</title><style>body{font:16px/1.65 system-ui;max-width:880px;margin:32px auto;padding:0 20px;color:#17202a}h1{font-size:28px}h2{font-size:22px}section{border-top:1px solid #dce3ea;padding:16px 0}a{color:#1558ad}li{margin:8px 0}code{font-size:14px}</style><body><h1>Windows 設定工具｜測試結果</h1><section>$mainLink</section><section><h2>整體覆蓋率</h2><p>$coverageNotice</p></section><section><h2>使用與下載</h2><p><a href="https://github.com/ycpss91255/windows_setup/blob/main/readme.md">USB 安裝與使用步驟</a> · <a href="https://github.com/ycpss91255/windows_setup/releases">下載 Release</a> · <a href="https://github.com/ycpss91255/windows_setup/actions/workflows/windows_tests.yml">Actions 執行紀錄</a></p></section><section class="section"><h2>版本紀錄</h2><ul>$links</ul></section></body></html>
 "@
+$html=$html.Replace('<h2>整體覆蓋率</h2>','<h2>'+[Net.WebUtility]::HtmlEncode($coverageHeading)+'</h2>')
+if($paired){
+ $html=New-PairedOverviewHtml -Native $main -Container $container -Title 'Windows 設定工具｜測試結果'
+ $more='<section class="section"><h2>使用與下載</h2><p><a href="https://github.com/ycpss91255/windows_setup/blob/main/readme.md">USB 安裝與使用步驟</a> · <a href="https://github.com/ycpss91255/windows_setup/releases">下載 Release</a></p></section><section class="section"><h2>版本紀錄</h2><ul>'+$links+'</ul></section>'
+ $html=$html.Replace('</main>',$more+'</main>')
+}
 [IO.File]::WriteAllText((Join-Path $output 'index.html'),$html,$utf8)
 [pscustomobject]@{OutputDirectory=$output;Versions=$versions.Count;MainStatus=$mainStatus}

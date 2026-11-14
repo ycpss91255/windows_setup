@@ -123,7 +123,11 @@ func ValidateSVG(data []byte, r Report, name string) error {
 	}
 	label := name + " " + strings.ToLower(r.RefType)
 	status := BadgeStatus(r, name)
-	if name == "coverage" && len(s.Group.Texts) == 2 && (s.Group.Texts[0] == "ps coverage" || (r.SchemaVersion == 2 && s.Group.Texts[0] == "coverage")) {
+	runtimeBadge := name == "coverage" && r.RepoCoverage != nil && r.RepoCoverage.SchemaVersion == c.RuntimeSchemaVersion
+	if runtimeBadge && (len(s.Group.Texts) != 2 || s.Group.Texts[0] != "runtime PowerShell/C#") {
+		return fmt.Errorf("runtime badge lacks language scope")
+	}
+	if name == "coverage" && len(s.Group.Texts) == 2 && (s.Group.Texts[0] == "ps coverage" || (r.SchemaVersion == 2 && s.Group.Texts[0] == "coverage") || (runtimeBadge && s.Group.Texts[0] == "runtime PowerShell/C#")) {
 		label = s.Group.Texts[0]
 		scope := label + " " + strings.ToLower(r.RefType) + ": " + status
 		if s.Aria != scope || s.Title != scope {
