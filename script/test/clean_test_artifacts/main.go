@@ -70,11 +70,22 @@ func normalizeTempRoot(path string) (string, tempAnchor, error) {
 	if err != nil {
 		return "", anchor, err
 	}
-	for _, base := range []string{raw, anchor.path} {
-		rel, e := filepath.Rel(base, path)
-		if e == nil && rel != "." && rel != ".." && !filepath.IsAbs(rel) && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-			return filepath.Join(anchor.path, rel), anchor, nil
+	// Resolve existing directories through the same locked, reparse-rejecting
+	// path as TEMP, including mixtures of long and 8.3 names. An init target
+	// may not exist yet, but its parent must already exist.
+	resolved, _, err := canonicalTemp(path)
+	if os.IsNotExist(err) {
+		parent, _, parentErr := canonicalTemp(filepath.Dir(path))
+		if parentErr != nil {
+			return "", anchor, parentErr
 		}
+		resolved = filepath.Join(parent, filepath.Base(path))
+	} else if err != nil {
+		return "", anchor, err
+	}
+	rel, e := filepath.Rel(anchor.path, resolved)
+	if e == nil && rel != "." && rel != ".." && !filepath.IsAbs(rel) && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return filepath.Join(anchor.path, rel), anchor, nil
 	}
 	return "", anchor, errors.New("root outside TEMP")
 }
