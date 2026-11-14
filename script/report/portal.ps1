@@ -1,4 +1,32 @@
 ﻿#Requires -Version 5.1
+function New-PairedOverviewHtml {
+ param($Native,$Container,[string]$Title='主線測試結果')
+ $encode={param($v) [Net.WebUtility]::HtmlEncode([string]$v)}
+ $passed=$Native.Success -and $Container.Success -and $Native.Totals.UnexecutedSuites -eq 0 -and $Container.Totals.UnexecutedSuites -eq 0
+ $status=if($passed){'目前程式檢查通過'}else{'目前程式檢查未通過'};$stamp=([DateTimeOffset]::Parse($Native.MeasuredAt)).UtcDateTime.ToString('yyyy-MM-dd HH:mm:ss')+' UTC';$tag=if($passed){'tag'}else{'tag failed'}
+ $coverage=if($Native.PSObject.Properties['RepoCoverage']){(Get-RepoCoverageScopeLabel $Native.RepoCoverage)+' 覆蓋率：'+(Get-RepoCoverageSummary $Native.RepoCoverage)}else{'尚未完整量測'}
+ $body='<section class="hero"><span class="'+$tag+'">'+$status+'</span><h2>這份版本的自動檢查結果</h2><p>來源：'+(& $encode ($Native.RefType+' / '+$Native.RefName))+' · 提交 <code>'+(& $encode $Native.Commit)+'</code><br>量測時間（UTC）：'+(& $encode $stamp)+'</p><div class="nav"><a class="btn" href="https://github.com/ycpss91255/windows_setup/blob/'+(& $encode $Native.Commit)+'/readme.md">查看本次來源的使用說明</a><a class="secondary" href="https://github.com/ycpss91255/windows_setup/blob/main/readme.md">主線使用說明</a><a class="secondary" href="main/index.html">主線完整報告</a><a class="secondary" href="'+(& $encode $Native.RunUrl)+'">查看執行紀錄</a></div></section>'
+ $body+='<div class="grid"><article class="card"><h3>測試狀態</h3><div class="big">'+$status+'</div><p class="muted">靜態、單元及隔離整合測試</p></article><article class="card"><h3>原生檢查項目（斷言）</h3><div class="big">'+$Native.Totals.AssertionsPassed+' / '+$Native.Totals.AssertionsExecuted+'</div><p class="muted">'+$Native.Totals.SuitesExecuted+' 組測試 · 失敗 '+$Native.Totals.AssertionsFailed+'</p></article><article class="card"><h3>原生整體覆蓋率</h3><div class="big">'+(& $encode $coverage)+'</div><p class="muted">容器未量測，不合併分母。</p></article></div>'
+ $pairs=@([pscustomobject]@{Label='Windows 原生';Path='native';Report=$Native},[pscustomobject]@{Label='Windows 容器';Path='windows_container';Report=$Container})
+ $body+='<section class="section"><h2>分環境查看</h2><div class="envs">'
+ foreach($pair in $pairs){
+  $r=$pair.Report;$good=$r.Success -and $r.Totals.UnexecutedSuites -eq 0;$state=if($good){'測試通過'}else{'測試未通過'};$class=if($good){'tag'}else{'tag failed'}
+  $measure=if($pair.Path -eq 'native'){$coverage}else{'容器未量測'}
+  $extra=if($pair.Path -eq 'native'){'<p><a href="native/repo_coverage.json">整體量測證據</a> · <a href="native/coverage_inventory.json">來源清單</a> · <a href="native/coverage.xml">逐行結果</a></p>'}else{''}
+  $body+='<article class="env"><span class="'+$class+'">'+$state+'</span><h3>'+(& $encode $pair.Label)+'</h3><div class="row"><span>測試組數</span><strong>'+$r.Totals.SuitesExecuted+' 組測試</strong></div><div class="row"><span>檢查項目（斷言）</span><strong>'+$r.Totals.AssertionsPassed+' / '+$r.Totals.AssertionsExecuted+' · 失敗 '+$r.Totals.AssertionsFailed+'</strong></div><div class="row"><span>覆蓋率</span><strong>'+(& $encode $measure)+'</strong></div><p class="muted">'+(& $encode $r.Environment)+'</p><p><a href="'+$pair.Path+'/index.html">查看完整報表與證據</a></p><p><a href="'+$pair.Path+'/summary.json">JSON</a> · <a href="'+$pair.Path+'/junit.xml">JUnit</a> · <a href="'+$pair.Path+'/summary.md">文字摘要</a></p>'+$extra+'</article>'
+ }
+ $body+='</div></section><section class="section"><h2>這次檢查了什麼</h2>'
+ $rows=@(foreach($pair in $pairs){foreach($check in @($pair.Report.Checks)){[pscustomobject]@{Label=$pair.Label;Check=$check}}})
+ foreach($row in @($rows|Sort-Object @{Expression={if($_.Check.Status -eq 'Failed'){0}elseif($_.Check.Status -eq 'NotRun'){1}else{2}}})){
+  $check=$row.Check;$state=if($check.Status -eq 'Failed'){'失敗'}elseif($check.Status -eq 'NotRun'){'未執行'}else{'通過'}
+  $body+='<details><summary>'+(& $encode ($row.Label+' · '+$check.Layer+' · '+$check.Name+' · '+$state))+'</summary><ul>'
+  foreach($assertion in @($check.Assertions)){$assertionState=if(-not $check.Executed){'未執行'}elseif($assertion.Passed){'通過'}else{'失敗'};$body+='<li>'+(& $encode ($assertion.Name+' · '+$assertionState))+'</li>'}
+  $body+='</ul></details>'
+ }
+ $body+='</section>'
+ $template=[IO.File]::ReadAllText((Join-Path $PSScriptRoot '../test/report_bundle_tool/overview.html'),[Text.Encoding]::UTF8).TrimStart([char]0xfeff)
+ return $template.Replace('{{TITLE}}',(& $encode $Title)).Replace('{{BODY}}',$body)
+}
 function Get-TestReportArtifactNames {
  param([ValidateSet(1,2)][int]$SchemaVersion,[switch]$IncludeGoProfile)
  $files=@('index.html','summary.json','summary.md','junit.xml','unit.svg','integration.svg','coverage.svg')

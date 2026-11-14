@@ -10,7 +10,7 @@ Push-Location $root
 try{& go.exe build -mod=vendor -o $tool ./script/test/repo_coverage_tool;if($LASTEXITCODE -ne 0){throw 'coverage CLI build failed'}}finally{Pop-Location}
 $checks=@(foreach($layer in @('Unit','Integration')){[pscustomobject]@{Name=$layer;Layer=$layer;Status='Passed';Executed=$true;Passed=$true;ExitCode=0;DurationSeconds=1;Assertions=@([pscustomobject]@{Name='real assertion';Passed=$true})}})
 $identity=@{Commit=('a'*40);RunUrl='https://github.com/example/repo/actions/runs/1';MeasuredAt='2026-11-08T00:00:00Z';SourceState='Clean'}
-$public=Join-Path $fixture 'public';Write-TestReports -Checks $checks -OutputDirectory $public @identity -RefName main -Environment 'Synthetic publication fixture'|Out-Null
+$public=Join-Path $fixture 'public';Write-TestReports -Checks $checks -OutputDirectory $public @identity -RefName main -Environment 'Windows synthetic native'|Out-Null
 $evidence=Join-Path $fixture 'evidence';New-Item -ItemType Directory $evidence|Out-Null
 $utf8=[Text.UTF8Encoding]::new($false)
 $inventory=[ordered]@{Sources=@([ordered]@{Path='core/example.ps1';Language='powershell';SHA256=('b'*64);ExpectedLines=@(1,2,3,4,5)});Excluded=$null;Blockers=$null}
@@ -24,13 +24,18 @@ $report=Get-Content (Join-Path $public 'summary.json') -Raw -Encoding UTF8|Conve
 Assert ($report.Coverage -ceq 'Measured' -and $report.RepoCoverage.SchemaVersion -eq 2 -and $report.RepoCoverage.Scope -ceq 'core-modules-powershell-and-modules-native-csharp' -and $report.RepoCoverage.Result.Percent -eq 80) '真CLI重算後附加完整runtime覆蓋率'
 foreach($name in @('repo_coverage.json','coverage_inventory.json','coverage.xml')){Assert ((Get-FileHash (Join-Path $public $name)).Hash -eq (Get-FileHash (Join-Path $evidence $name)).Hash) ('永久證據逐位元保存：'+$name)}
 $catalog=Join-Path $fixture 'catalog.json';[IO.File]::WriteAllText($catalog,'[]')
+$portalContainer=Join-Path $fixture 'portal_container'
+Write-TestReports -Checks $checks -OutputDirectory $portalContainer @identity -RefName main -Environment 'Windows container / Windows synthetic'|Out-Null
+$bundleTool=Join-Path $fixture 'report_bundle_tool.exe'
+Push-Location $root
+try{& go.exe build -mod=vendor -o $bundleTool ./script/test/report_bundle_tool;if($LASTEXITCODE -ne 0){throw 'bundle CLI build failed'}}finally{Pop-Location}
 $portal=Join-Path $fixture 'portal'
-& (Join-Path $root 'script/report/build_portal.ps1') -CatalogPath $catalog -OutputDirectory $portal -MainSnapshotPath (Join-Path $public 'summary.json') -CoverageToolPath $tool|Out-Null
+& (Join-Path $root 'script/report/build_portal.ps1') -CatalogPath $catalog -OutputDirectory $portal -MainSnapshotPath (Join-Path $public 'summary.json') -CoverageToolPath $tool -ContainerSnapshotPath (Join-Path $portalContainer 'summary.json') -BundleToolPath $bundleTool|Out-Null
 $landingPage=[IO.File]::ReadAllText((Join-Path $portal 'index.html'))
 Assert ($landingPage.Contains('PowerShell/C# runtime 覆蓋率') -and $landingPage.Contains('80.0%') -and $landingPage.Contains('4/5 可執行行')) 'Pages首頁顯示runtime共同計量'
 foreach($name in @('repo_coverage.json','coverage_inventory.json','coverage.xml')){Assert ((Get-FileHash (Join-Path $portal ('main/'+$name))).Hash -eq (Get-FileHash (Join-Path $evidence $name)).Hash) ('Pages保留可重算證據：'+$name)}
 $missing=Join-Path $fixture 'missing';Write-TestReports -Checks $checks -OutputDirectory $missing @identity -RefName main|Out-Null
-Refuse {& (Join-Path $root 'script/report/build_portal.ps1') -CatalogPath $catalog -OutputDirectory (Join-Path $fixture 'missing_portal') -MainSnapshotPath (Join-Path $missing 'summary.json') -CoverageToolPath $tool} '正式Pages缺整體量測必須拒絕'
+Refuse {& (Join-Path $root 'script/report/build_portal.ps1') -CatalogPath $catalog -OutputDirectory (Join-Path $fixture 'missing_portal') -MainSnapshotPath (Join-Path $missing 'summary.json') -ContainerSnapshotPath (Join-Path $portalContainer 'summary.json') -BundleToolPath $bundleTool -CoverageToolPath $tool} '正式Pages缺整體量測必須拒絕'
 $legacyDirectory=Join-Path $fixture 'legacy_publish'
 Write-TestReports -Checks $checks -OutputDirectory $legacyDirectory @identity -SchemaVersion 1 -Version v1.0.0 -RefType Release -RefName v1.0.0 -Environment 'Synthetic historical fixture'|Out-Null
 $global:repoPublicationRemoteCalled=$false
@@ -178,7 +183,7 @@ $lowCoverage.NormalizedSHA256=(Get-FileHash (Join-Path $lowDirectory 'coverage.x
 Refuse {& (Join-Path $root 'script/test/attach_repo_coverage.ps1') -PublicDirectory $public -CoverageDirectory $lowDirectory -CoverageToolPath $tool} '完整但低於八成的真證據不得附加發布'
 $lowReport=$report|ConvertTo-Json -Depth 20|ConvertFrom-Json;$lowReport.RepoCoverage=$lowCoverage;$lowReport.RefType='Branch';$lowReport.RefName='main'
 Write-SnapshotView $lowReport $lowDirectory
-Refuse {& (Join-Path $root 'script/report/build_portal.ps1') -CatalogPath $catalog -OutputDirectory (Join-Path $fixture 'low_portal') -MainSnapshotPath (Join-Path $lowDirectory 'summary.json') -CoverageToolPath $tool} '正式Pages逐行重算拒絕低於八成'
+Refuse {& (Join-Path $root 'script/report/build_portal.ps1') -CatalogPath $catalog -OutputDirectory (Join-Path $fixture 'low_portal') -MainSnapshotPath (Join-Path $lowDirectory 'summary.json') -ContainerSnapshotPath (Join-Path $portalContainer 'summary.json') -BundleToolPath $bundleTool -CoverageToolPath $tool} '正式Pages逐行重算拒絕低於八成'
 $lowReport.RefType='Release';$lowReport.RefName='v1.0.0';Write-SnapshotView $lowReport $lowDirectory
 $global:repoPublicationRemoteCalled=$false
 function gh {$global:repoPublicationRemoteCalled=$true;throw 'unexpected remote call'}
