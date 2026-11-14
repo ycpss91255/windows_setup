@@ -670,6 +670,8 @@ CI 使用與 base 相同的 GitHub Actions 原生徽章；runtime 覆蓋率使�
 
 每次測試從實際斷言事件及程序退出碼產生 JSON、Markdown、自含 HTML、JUnit XML 與徽章。程序崩潰、缺少斷言事件或任何失敗均不能標成通過。新增 `test/powershell/unit` 或 `integration` 測試會自動列入執行清單。公開報表只包含靜態檢查、單元與隔離整合結果。
 
+此計時的 instrumentation 來源為同次 runtime PowerShell（`core/` 與 `modules/`，排除第三方）；suite 清單仍涵蓋全部安全 unit 與 integration 測試。維護者可在該次 Actions 附件下載 `powershell-timing-complete-<run_id>-<attempt>`，查閱已與全部分片實際 worker 身分及完整 suite 清單核對的階段毫秒數。`worker_setup` 從 worker 腳本開始計時，不包含程序建立前等待；`pester_instrumentation_and_test` 包含 Pester instrumentation 與測試，兩者未分開量測；`serialization` 包含測試後驗證與 worker 證據序列化。計時不是覆蓋率或測試通過證據，不應用於替代同次測試；排隊時間與分片、聚合 job 的執行時間仍須以 Actions 時間資料另行區分。單次數值與模擬均不保證效能改善。
+
 PR 的去識別測試附件保留七天；main 通過全部必要門檻後更新 Pages，失敗時公開徽章仍保留上次成功部署的證據。新版 Release 的報表 ZIP 長期保存 `repo_coverage.json`、`coverage_inventory.json`、`coverage.xml` 與兩種環境的測試摘要，核對來源、計量、雜湊及計數。歷史版本依原始證據整理頁面並連回不可變原始附件；缺紀錄就如實說明，不以目前測試回填。
 
 維護者接線依序為：產生三份 runtime 證據 → `script/test/attach_repo_coverage.ps1` 附加到測試報表 → `script/report/build_portal.ps1` 或 `publish_quality_release.ps1`。三個入口都使用已建置的 `repo_coverage_tool`，由 `-CoverageToolPath` 或 `WINDOWS_SETUP_COVERAGE_TOOL` 指定；缺工具、缺來源、未完整量測或未達精確 80% 都會停止。附加時以 `-SourceRoot` 核對真實 checkout。`build_portal.ps1 -Preview` 僅供本機合成樣本，不得用於正式 Pages 或 Release；本輪 publisher 不接受舊覆蓋率口徑。

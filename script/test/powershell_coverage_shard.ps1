@@ -1,10 +1,10 @@
 ﻿#Requires -Version 5.1
 [CmdletBinding()]
-param([string]$SourceRoot,[string]$OutputDirectory,[string]$PrivateDirectory,[int]$ShardIndex,[ValidateRange(1,4)][int]$ShardCount=4,[string]$Commit,[string]$RunUrl,[ValidateRange(1,2147483647)][int]$RunAttempt=1,[string]$CoverageToolPath)
+param([string]$SourceRoot,[string]$OutputDirectory,[string]$PrivateDirectory,[string]$TimingDirectory,[int]$ShardIndex,[ValidateRange(1,4)][int]$ShardCount=4,[string]$Commit,[string]$RunUrl,[ValidateRange(1,2147483647)][int]$RunAttempt=1,[string]$CoverageToolPath)
 . (Join-Path $PSScriptRoot 'ci_tasks.ps1')
 function Invoke-PowerShellCoverageShard {
  [CmdletBinding()]
- param([Parameter(Mandatory=$true)][string]$SourceRoot,[Parameter(Mandatory=$true)][string]$OutputDirectory,[Parameter(Mandatory=$true)][string]$PrivateDirectory,[Parameter(Mandatory=$true)][int]$ShardIndex,[ValidateRange(1,4)][int]$ShardCount=4,[Parameter(Mandatory=$true)][string]$Commit,[Parameter(Mandatory=$true)][string]$RunUrl,[ValidateRange(1,2147483647)][int]$RunAttempt=1,[string]$CoverageToolPath)
+ param([Parameter(Mandatory=$true)][string]$SourceRoot,[Parameter(Mandatory=$true)][string]$OutputDirectory,[Parameter(Mandatory=$true)][string]$PrivateDirectory,[string]$TimingDirectory,[Parameter(Mandatory=$true)][int]$ShardIndex,[ValidateRange(1,4)][int]$ShardCount=4,[Parameter(Mandatory=$true)][string]$Commit,[Parameter(Mandatory=$true)][string]$RunUrl,[ValidateRange(1,2147483647)][int]$RunAttempt=1,[string]$CoverageToolPath)
 $ErrorActionPreference='Stop'
 $source=[IO.Path]::GetFullPath($SourceRoot).TrimEnd('\','/')
 $output=[IO.Path]::GetFullPath($OutputDirectory).TrimEnd('\','/')
@@ -28,7 +28,9 @@ Invoke-CINative -File $CoverageToolPath -Arguments (@('powershell-shard-plan','-
 $evidence=Join-Path $private 'collector'
 Invoke-CINative -File powershell.exe -Arguments @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot 'powershell_coverage.ps1'),'-ManifestPath',(Join-Path $plan 'privatecollection_manifest.json'),'-OutputDirectory',$evidence,'-ThrottleLimit','2')
 Invoke-CINative -File $CoverageToolPath -Arguments @('export-powershell','--runtime','--source-root',$source,'--evidence-dir',$evidence,'--output-dir',$output)
-Invoke-CINative -File $CoverageToolPath -Arguments (@('powershell-shard-pack','--evidence-dir',$output)+$identity)
+$packArguments=@('powershell-shard-pack','--evidence-dir',$output)+$identity
+if($TimingDirectory){$packArguments+=@('--timing-input-dir',$evidence,'--timing-output-dir',$TimingDirectory)}
+Invoke-CINative -File $CoverageToolPath -Arguments $packArguments
 Write-Host ('已完成保真原生PowerShell分片 '+$ShardIndex+'/'+$ShardCount+'；公開目錄只保留已驗證的相對路徑證據。')
 $global:LASTEXITCODE=0
 

@@ -114,7 +114,7 @@ jobs:
         run: |
           . .\script\test\ci_quality_summary.ps1
           Invoke-CIShardTimed -ShardIndex ([int]$env:SHARD_INDEX) -SummaryPath $env:GITHUB_STEP_SUMMARY -Action {
-            .\script\test\powershell_coverage_shard.ps1 -SourceRoot $PWD.Path -OutputDirectory (Join-Path $env:RUNNER_TEMP 'powershell-shard-public') -PrivateDirectory (Join-Path $env:RUNNER_TEMP 'powershell-shard-private') -ShardIndex ([int]$env:SHARD_INDEX) -ShardCount 4 -Commit $env:GITHUB_SHA -RunUrl ("https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID") -RunAttempt ([int]$env:GITHUB_RUN_ATTEMPT)
+            .\script\test\powershell_coverage_shard.ps1 -SourceRoot $PWD.Path -OutputDirectory (Join-Path $env:RUNNER_TEMP 'powershell-shard-public') -PrivateDirectory (Join-Path $env:RUNNER_TEMP 'powershell-shard-private') -TimingDirectory (Join-Path $env:RUNNER_TEMP 'powershell-timing-public') -ShardIndex ([int]$env:SHARD_INDEX) -ShardCount 4 -Commit $env:GITHUB_SHA -RunUrl ("https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID") -RunAttempt ([int]$env:GITHUB_RUN_ATTEMPT)
           }
       - name: 僅保留已驗證的相對路徑分片證據七天
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -124,6 +124,13 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      - name: 保留各 suite 階段時間七天
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: powershell-timing-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/powershell-timing-public/
+          retention-days: 7
+          if-no-files-found: error
   isolated-tests:
     runs-on: windows-2022
     timeout-minutes: 90
@@ -238,9 +245,22 @@ jobs:
           pattern: powershell-shard-${{ github.run_id }}-${{ github.run_attempt }}-*
           path: ${{ runner.temp }}/powershell-shards
           merge-multiple: false
+      - name: 下載同次與同 attempt 的完整計時收據
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: powershell-timing-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: ${{ runner.temp }}/powershell-timings
+          merge-multiple: false
       - name: 收集 PowerShell 與 C# runtime 覆蓋率並強制完整八成
         run: |
-          & .\script\test\run_repo_coverage.ps1 -SourceRoot $PWD.Path -PublicDirectory (Join-Path $env:RUNNER_TEMP 'native-stage-import/report') -ManagedEvidencePath (Join-Path $env:RUNNER_TEMP 'managed-coverage/evidence.json') -OutputDirectory (Join-Path $env:RUNNER_TEMP 'repo-coverage') -PowerShellShardDirectory (Join-Path $env:RUNNER_TEMP 'powershell-shards') -RunAttempt ([int]$env:GITHUB_RUN_ATTEMPT)
+          & .\script\test\run_repo_coverage.ps1 -SourceRoot $PWD.Path -PublicDirectory (Join-Path $env:RUNNER_TEMP 'native-stage-import/report') -ManagedEvidencePath (Join-Path $env:RUNNER_TEMP 'managed-coverage/evidence.json') -OutputDirectory (Join-Path $env:RUNNER_TEMP 'repo-coverage') -PowerShellShardDirectory (Join-Path $env:RUNNER_TEMP 'powershell-shards') -PowerShellTimingDirectory (Join-Path $env:RUNNER_TEMP 'powershell-timings') -RunAttempt ([int]$env:GITHUB_RUN_ATTEMPT)
+      - name: 保留已核對完整清單的計時收據七天
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: powershell-timing-complete-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/repo-coverage/timing/timing.json
+          retention-days: 7
+          if-no-files-found: error
       - name: 顯示已驗證的同次品質摘要
         run: |
           . .\script\test\ci_quality_summary.ps1

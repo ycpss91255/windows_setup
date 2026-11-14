@@ -1,6 +1,7 @@
 ﻿#Requires -Version 5.1
 [CmdletBinding()]
 param([Parameter(Mandatory=$true)][string]$ManifestPath,[Parameter(Mandatory=$true)][string]$OutputDirectory,[int]$WorkerIndex=-1,[string]$PesterModule,[string]$PwshPath,[ValidateRange(1,2)][int]$ThrottleLimit=1)
+$workerClock=[Diagnostics.Stopwatch]::StartNew()
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'powershell_worker_diagnostics.ps1')
 $version='6.0.0'
@@ -98,7 +99,9 @@ if($WorkerIndex -ge 0){
  $config.CodeCoverage.CoveragePercentTarget=0
  $failurePath=Join-Path $output ('worker_'+$WorkerIndex+'.private.failure.json')
  $priorPesterErrors=@($global:Error);$pesterInvocationErrors=@()
+ $setupMilliseconds=$workerClock.ElapsedMilliseconds;$workerClock.Restart()
  try{$result=Invoke-Pester -Configuration $config -ErrorVariable pesterInvocationErrors}catch{try{Write-PesterWorkerFailureRecord -Path $failurePath -SourceRoot $source -AllowedFiles $diagnosticFiles -InvocationErrors @($_)}catch{};throw}
+ $pesterMilliseconds=$workerClock.ElapsedMilliseconds;$workerClock.Restart()
  if($result.FailedCount -gt 0 -or $result.PassedCount -lt 1 -or $result.Result -ne 'Passed'){
   try{
    if($null -eq $result){
@@ -120,6 +123,11 @@ if($WorkerIndex -ge 0){
  $workerProof=[ordered]@{ProcessId=$PID;PesterVersion=$version;Engine=$engine;EngineVersion=$PSVersionTable.PSVersion.ToString();EngineSHA256=$engineHash;Sources=$hashes;Commands=$rows}
  if($null -ne $testContext){$workerProof.Context=$testContext}
  Write-Json (Join-Path $output ('worker_'+$WorkerIndex+'.json')) $workerProof
+ if($null -ne $testContext){
+  $serializationMilliseconds=$workerClock.ElapsedMilliseconds
+  $timing=[ordered]@{SchemaVersion=1;Context=$testContext;Phases=@([ordered]@{Name='worker_setup';Milliseconds=$setupMilliseconds},[ordered]@{Name='pester_instrumentation_and_test';Milliseconds=$pesterMilliseconds},[ordered]@{Name='serialization';Milliseconds=$serializationMilliseconds})}
+  Write-Json (Join-Path $output ('worker_'+$WorkerIndex+'.timing.json')) $timing
+ }
  exit 0
 }
 if(Test-Path -LiteralPath $output){throw '輸出目錄必須是全新目錄。'}
