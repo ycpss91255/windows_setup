@@ -78,6 +78,80 @@ func TestPowerShellShardPlanPreservesCanonicalScope(t *testing.T) {
 	}
 }
 
+func TestRuntimeShardIgnoresMaintenanceSource(t *testing.T) {
+	root, manifest, _ := shardCLIFixture(t)
+	path := filepath.Join(root, "script", "maintenance.ps1")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("Write-Output 'maintenance'\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "script/maintenance.ps1"}, {"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "maintenance"}} {
+		if b, e := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); e != nil {
+			t.Fatalf("git: %v %s", e, b)
+		}
+	}
+	b, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := append(shardCLIArgs(root, manifest, strings.TrimSpace(string(b))), "--runtime", "--shard-index", "0", "--output-dir", filepath.Join(t.TempDir(), "plan"))
+	if err := powershellShardPlan(args, &bytes.Buffer{}); err != nil {
+		t.Fatalf("runtime shard includes maintenance source: %v", err)
+	}
+}
+
+func TestRuntimePowerShellExportIgnoresMaintenanceSource(t *testing.T) {
+	root, _, _ := shardCLIFixture(t)
+	proof := filepath.Join(t.TempDir(), "proof")
+	writeShardCLIProof(t, root, proof, 12, true)
+	path := filepath.Join(root, "script", "maintenance.ps1")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("Write-Output 'maintenance'\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"--runtime", "--source-root", root, "--evidence-dir", proof, "--output-dir", filepath.Join(t.TempDir(), "output")}
+	if err := exportPowerShell(args, &bytes.Buffer{}); err != nil {
+		t.Fatalf("runtime raw export rejected: %v", err)
+	}
+}
+
+func TestRuntimeShardIncludesPowerShellModules(t *testing.T) {
+	root, manifest, _ := shardCLIFixture(t)
+	if err := os.WriteFile(filepath.Join(root, "core", "helper.psm1"), []byte("function Get-Helper { 1 }\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "core/helper.psm1"}, {"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "module"}} {
+		if b, e := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); e != nil {
+			t.Fatalf("git: %v %s", e, b)
+		}
+	}
+	head, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err = json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	m["Sources"] = []string{"core/helper.psm1", "core/value.ps1"}
+	b, _ = json.Marshal(m)
+	if err = os.WriteFile(manifest, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	args := append(shardCLIArgs(root, manifest, strings.TrimSpace(string(head))), "--runtime", "--shard-index", "0", "--output-dir", filepath.Join(t.TempDir(), "plan"))
+	if err := powershellShardPlan(args, &bytes.Buffer{}); err != nil {
+		t.Fatalf("runtime module rejected: %v", err)
+	}
+}
+
 func TestPowerShellShardPlanRejectsMissingCanonicalTest(t *testing.T) {
 	root, manifest, sha := shardCLIFixture(t)
 	b, _ := os.ReadFile(manifest)

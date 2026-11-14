@@ -21,13 +21,13 @@ if(-not $CoverageToolPath){
  try{Invoke-CINative -File go.exe -Arguments @('build','-mod=vendor','-o',$CoverageToolPath,'./script/test/repo_coverage_tool')}finally{Pop-Location}
 }
 $manifest=Join-Path $private 'canonical_manifest.json'
-Invoke-CINative -File powershell.exe -Arguments @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot '../../test/powershell/coverage/create_baseline_manifest.ps1'),'-SourceRoot',$source,'-OutputPath',$manifest)
-$identity=@('--source-root',$source,'--manifest',$manifest,'--expected-sha',$Commit,'--expected-run-url',$RunUrl,'--run-attempt',$RunAttempt.ToString(),'--shard-index',$ShardIndex.ToString(),'--shard-count',$ShardCount.ToString())
+Invoke-CINative -File powershell.exe -Arguments @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot '../../test/powershell/coverage/create_baseline_manifest.ps1'),'-SourceRoot',$source,'-OutputPath',$manifest,'-Runtime')
+$identity=@('--runtime','--source-root',$source,'--manifest',$manifest,'--expected-sha',$Commit,'--expected-run-url',$RunUrl,'--run-attempt',$RunAttempt.ToString(),'--shard-index',$ShardIndex.ToString(),'--shard-count',$ShardCount.ToString())
 $plan=Join-Path $private 'plan'
 Invoke-CINative -File $CoverageToolPath -Arguments (@('powershell-shard-plan','--output-dir',$plan)+$identity)
 $evidence=Join-Path $private 'collector'
 Invoke-CINative -File powershell.exe -Arguments @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot 'powershell_coverage.ps1'),'-ManifestPath',(Join-Path $plan 'privatecollection_manifest.json'),'-OutputDirectory',$evidence,'-ThrottleLimit','2')
-Invoke-CINative -File $CoverageToolPath -Arguments @('export-powershell','--source-root',$source,'--evidence-dir',$evidence,'--output-dir',$output)
+Invoke-CINative -File $CoverageToolPath -Arguments @('export-powershell','--runtime','--source-root',$source,'--evidence-dir',$evidence,'--output-dir',$output)
 $packArguments=@('powershell-shard-pack','--evidence-dir',$output)+$identity
 if($TimingDirectory){$packArguments+=@('--timing-input-dir',$evidence,'--timing-output-dir',$TimingDirectory)}
 Invoke-CINative -File $CoverageToolPath -Arguments $packArguments

@@ -24,16 +24,6 @@ function Initialize-ContainerGoEnvironment {
 }
 function Invoke-ContainerGoTestPhase {
  param($Plan,[string]$SourceRoot,[string]$ReportDirectory)
- if($Plan.Mode -eq 'LocalSynthetic'){
-  Invoke-ContainerGo -Arguments @('test','-count=1','./...')
-  return
- }
- if($Plan.Mode -cne 'CIActual'){throw 'Unknown Go test mode.'}
- $coverage=Join-Path $ReportDirectory 'go_coverage'
- $public=Join-Path $ReportDirectory 'public'
- & (Join-Path $SourceRoot 'script/test/measure_go_coverage.ps1') -SourceRoot $SourceRoot -ReportDirectory $public -OutputDirectory $coverage
- $report=Get-Content -LiteralPath (Join-Path $public 'summary.json') -Raw -Encoding UTF8|ConvertFrom-Json
- if($report.RefType -eq 'Branch'){
-  & (Join-Path $SourceRoot 'script/test/attach_go_coverage.ps1') -PublicDirectory $public -CoverageDirectory $coverage
- }
+ if($Plan.Mode -cnotin @('LocalSynthetic','CIActual')){throw 'Unknown Go test mode.'}
+ Invoke-ContainerGo -Arguments @('test','-count=1','./...')
 }

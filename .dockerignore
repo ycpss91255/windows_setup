@@ -12,3 +12,4 @@
 
 !script/docker/install_managed_tools.ps1
 !script/docker/download_library.ps1
+!script/docker/container_health.ps1

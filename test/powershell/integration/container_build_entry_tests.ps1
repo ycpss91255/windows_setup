@@ -9,7 +9,7 @@ $source=$sourceItem.FullName
 Assert ($sourceItem -is [IO.DirectoryInfo] -and $source -ceq $sourceItem.FullName) 'owned fixture uses the real existing directory name before passing source to a child process'
 $otherSource=Join-Path $fixture 'sibling/source';[void][IO.Directory]::CreateDirectory($otherSource);$otherSource=(Get-Item -LiteralPath $otherSource -ErrorAction Stop).FullName
 Assert ((Split-Path -Leaf $otherSource) -ceq (Split-Path -Leaf $source) -and $otherSource -cne $source) 'source rejection fixture is another existing directory with the same leaf name'
-foreach($file in @('dockerfile/windows_tests.dockerfile','script/docker/download_library.ps1','script/docker/install_min_git.ps1','script/docker/install_go.ps1','script/docker/install_managed_tools.ps1','script/docker/container_test.ps1','script/docker/docker.ps1','script/docker/library.ps1','script/test/ci_tasks.ps1','.dockerignore','compose.yaml')){
+foreach($file in @('dockerfile/windows_tests.dockerfile','script/docker/download_library.ps1','script/docker/install_min_git.ps1','script/docker/install_go.ps1','script/docker/install_managed_tools.ps1','script/docker/container_test.ps1','script/docker/container_health.ps1','script/docker/docker.ps1','script/docker/library.ps1','script/test/ci_tasks.ps1','.dockerignore','compose.yaml')){
  $target=Join-Path $source $file;[void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target));Copy-Item -LiteralPath (Join-Path $root $file) -Destination $target
 }
 $runner=Join-Path $fixture 'runner.ps1'

@@ -33,11 +33,25 @@ func ValidateRepoCoverageReport(read Reader, summary []byte, sha, run string, re
 	if err != nil {
 		return nil, err
 	}
-	embedded, err := c.ValidateEvidence(raw.RepoCoverage, inventory, normalized, sha, run)
+	validate := func(data []byte) (c.Evidence, error) {
+		var header struct{ SchemaVersion int }
+		if err := json.Unmarshal(data, &header); err != nil {
+			return c.Evidence{}, err
+		}
+		if header.SchemaVersion == c.RuntimeSchemaVersion {
+			runtime, err := c.ValidateRuntimeEvidence(data, inventory, normalized, sha, run)
+			if err != nil {
+				return c.Evidence{}, err
+			}
+			return c.Evidence{SchemaVersion: runtime.SchemaVersion, Metric: runtime.Metric, Scope: runtime.Scope, Identity: runtime.Identity, InventorySHA256: runtime.InventorySHA256, NormalizedSHA256: runtime.NormalizedSHA256, Result: runtime.Result}, nil
+		}
+		return c.ValidateEvidence(data, inventory, normalized, sha, run)
+	}
+	embedded, err := validate(raw.RepoCoverage)
 	if err != nil {
 		return nil, err
 	}
-	sidecar, err := c.ValidateEvidence(published, inventory, normalized, sha, run)
+	sidecar, err := validate(published)
 	if err != nil {
 		return nil, err
 	}

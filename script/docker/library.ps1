@@ -6,7 +6,7 @@ function Get-ContainerContext {
  if(-not $ReportDirectory){$ReportDirectory=Join-Path ([IO.Path]::GetTempPath()) ('windows_container_'+[guid]::NewGuid().ToString('N'))}
  $reportPath=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ReportDirectory).TrimEnd('\','/')
  if($reportPath -ieq $rootPath -or $reportPath.StartsWith($rootPath+'\',[StringComparison]::OrdinalIgnoreCase) -or $rootPath.StartsWith($reportPath+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Container reports must be outside, and must not contain, the checkout.'}
- $inputs=@('dockerfile/windows_tests.dockerfile','script/docker/download_library.ps1','script/docker/install_min_git.ps1','script/docker/install_go.ps1','script/docker/install_managed_tools.ps1','script/docker/container_test.ps1','script/test/ci_tasks.ps1','.dockerignore','compose.yaml')
+ $inputs=@('dockerfile/windows_tests.dockerfile','script/docker/download_library.ps1','script/docker/install_min_git.ps1','script/docker/install_go.ps1','script/docker/install_managed_tools.ps1','script/docker/container_test.ps1','script/docker/container_health.ps1','script/test/ci_tasks.ps1','.dockerignore','compose.yaml')
  $fingerprint=(@($inputs|ForEach-Object {$_+':'+(Get-FileHash -LiteralPath (Join-Path $rootPath $_) -Algorithm SHA256).Hash}) -join "`n")
  $sha=[Security.Cryptography.SHA256]::Create()
  try{

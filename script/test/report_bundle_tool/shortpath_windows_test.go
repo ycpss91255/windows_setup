@@ -49,7 +49,7 @@ func TestOutputParentRejectsWindowsJunctions(t *testing.T) {
 		t.Fatal("source report junction accepted")
 	}
 	for _, parent := range []string{junction, filepath.Join(junction, "child")} {
-		if err := writeVerifiedOutput(filepath.Join(parent, "verified"), nil, map[string][]byte{}, options{}, "explicit"); err == nil {
+		if err := writeVerifiedOutput(filepath.Join(parent, "verified"), nil, map[string][]byte{}, options{}, "explicit", ""); err == nil {
 			t.Fatalf("junction or ancestor accepted: %s", parent)
 		}
 	}
@@ -78,7 +78,7 @@ func TestOutputParentRejectsNonDirectory(t *testing.T) {
 	if err := os.WriteFile(file, []byte("keep"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeVerifiedOutput(filepath.Join(file, "verified"), nil, map[string][]byte{}, options{}, "explicit"); err == nil {
+	if err := writeVerifiedOutput(filepath.Join(file, "verified"), nil, map[string][]byte{}, options{}, "explicit", ""); err == nil {
 		t.Fatal("non-directory parent accepted")
 	}
 	got, err := os.ReadFile(file)

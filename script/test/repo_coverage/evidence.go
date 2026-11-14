@@ -17,6 +17,7 @@ type Identity struct{ Commit, RunUrl, MeasuredAt, SourceState string }
 type Evidence struct {
 	SchemaVersion int
 	Metric        string
+	Scope         string `json:",omitempty"`
 	Identity
 	InventorySHA256, NormalizedSHA256 string
 	Result                            Result
@@ -120,12 +121,24 @@ func CreateEvidence(inventory Inventory, reports []Report, identity Identity) (A
 }
 
 func ValidateInventory(root string, data []byte) error {
-	var declared Inventory
-	if err := strictJSON(data, &declared); err != nil {
-		return err
-	}
 	actual, err := ScanInventory(root)
 	if err != nil {
+		return err
+	}
+	return validateInventory(actual, data)
+}
+
+func ValidateRuntimeInventory(root string, data []byte) error {
+	actual, err := ScanRuntimeInventory(root)
+	if err != nil {
+		return err
+	}
+	return validateInventory(actual, data)
+}
+
+func validateInventory(actual Inventory, data []byte) error {
+	var declared Inventory
+	if err := strictJSON(data, &declared); err != nil {
 		return err
 	}
 	if len(actual.Sources) != len(declared.Sources) {
@@ -164,7 +177,7 @@ func ValidateEvidence(summary, inventoryData, xmlData []byte, commit, run string
 	if err := validateIdentity(evidence.Identity); err != nil {
 		return evidence, err
 	}
-	if evidence.Commit != commit || evidence.RunUrl != run || evidence.SchemaVersion != SchemaVersion || evidence.Metric != Metric {
+	if evidence.Commit != commit || evidence.RunUrl != run || evidence.SchemaVersion != SchemaVersion || evidence.Metric != Metric || evidence.Scope != "" {
 		return evidence, fmt.Errorf("coverage identity or metric mismatch")
 	}
 	if evidence.InventorySHA256 != digest(inventoryData) || evidence.NormalizedSHA256 != digest(xmlData) {

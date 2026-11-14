@@ -7,7 +7,7 @@ function Refuse([scriptblock]$Action,[string]$Message){$caught=$false;try{& $Act
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ("container 中文 ' "+[guid]::NewGuid().ToString('N'))
 $source=Join-Path $fixture 'source';$reports=Join-Path $fixture 'reports'
 New-Item -ItemType Directory (Join-Path $source '.git'),(Join-Path $source 'dockerfile'),(Join-Path $source 'script/docker'),(Join-Path $source 'script/test') -Force|Out-Null
-foreach($file in @('dockerfile/windows_tests.dockerfile','script/docker/download_library.ps1','script/docker/install_min_git.ps1','script/docker/install_go.ps1','script/docker/install_managed_tools.ps1','script/docker/container_test.ps1','script/test/ci_tasks.ps1','.dockerignore','compose.yaml')){Copy-Item -LiteralPath (Join-Path $root $file) -Destination (Join-Path $source $file)}
+foreach($file in @('dockerfile/windows_tests.dockerfile','script/docker/download_library.ps1','script/docker/install_min_git.ps1','script/docker/install_go.ps1','script/docker/install_managed_tools.ps1','script/docker/container_test.ps1','script/docker/container_health.ps1','script/test/ci_tasks.ps1','.dockerignore','compose.yaml')){Copy-Item -LiteralPath (Join-Path $root $file) -Destination (Join-Path $source $file)}
 $first=Get-ContainerContext $source $reports
 $again=Get-ContainerContext $source $reports
 Assert ($first.Image -ceq $again.Image -and $first.Project -ceq $again.Project) 'same toolchain inputs select the same exact image and project'
@@ -96,7 +96,8 @@ $global:localGoCalls=0
 function go.exe {$global:localGoCalls++;$global:LASTEXITCODE=0}
 Invoke-ContainerGoTestPhase -Plan ([pscustomobject]@{Mode='LocalSynthetic'}) -SourceRoot $coverageSource -ReportDirectory (Join-Path $fixture 'local_report')
 Assert ($global:localGoCalls -eq 1) 'local container runs full Go tests without manufacturing clean coverage evidence'
-$failed=$false
-try{Invoke-ContainerGoTestPhase -Plan ([pscustomobject]@{Mode='CIActual'}) -SourceRoot $coverageSource -ReportDirectory (Join-Path $fixture 'ci_report')}catch{$failed=$_.Exception.Message -eq 'fixture measurement failed'}
-Assert $failed 'CI container propagates coverage measurement failure instead of falling back to local tests'
+Invoke-ContainerGoTestPhase -Plan ([pscustomobject]@{Mode='CIActual'}) -SourceRoot $coverageSource -ReportDirectory (Join-Path $fixture 'ci_report')
+Assert ($global:localGoCalls -eq 2) 'CI container runs Go tests without invoking the coverage collector'
+function go.exe {$global:LASTEXITCODE=23}
+Refuse {Invoke-ContainerGoTestPhase -Plan ([pscustomobject]@{Mode='CIActual'}) -SourceRoot $coverageSource -ReportDirectory (Join-Path $fixture 'ci_report')} 'CI container rejects failed Go tests'
 Remove-Item Function:/go.exe
