@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -40,7 +41,12 @@ type fileRecord struct {
 	Size   int64  `json:"size"`
 	SHA256 string `json:"sha256"`
 }
+
+//go:embed overview.html
+var overviewTemplate string
+
 type bundleManifest struct {
+	Presentation  string       `json:"presentation,omitempty"`
 	SchemaVersion int          `json:"schema_version"`
 	Scope         string       `json:"scope,omitempty"`
 	Version       string       `json:"version"`
@@ -263,7 +269,7 @@ func sourceClean(o options) error {
 	}
 	return nil
 }
-func rootDocuments(version string, native, container map[string][]byte) ([]byte, []byte) {
+func legacyRootDocuments(version string, native, container map[string][]byte) ([]byte, []byte) {
 	var scope strings.Builder
 	fmt.Fprintf(&scope, "# 版本測試報表\n\n版本：%s\n\n同次 Windows 原生與容器執行；CI 選取指定執行與重試的工件，這不是獨立來源認證。\n", version)
 	for i, m := range []map[string][]byte{native, container} {
@@ -431,13 +437,13 @@ func exportWithScope(o options, current bool) error {
 	for n, b := range container {
 		files["windows_container/"+n] = b
 	}
-	files["index.html"], files["report_scope.md"] = rootDocuments(o.version, native, container)
+	files["index.html"], files["report_scope.md"] = overviewRootDocuments(o.version, native, container)
 	names := make([]string, 0, len(files))
 	for n := range files {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	m := bundleManifest{SchemaVersion: 1, Version: o.version, Commit: o.commit, RunURL: o.run, RunAttempt: o.attempt, Provenance: provenanceNote}
+	m := bundleManifest{Presentation: overviewPresentation, SchemaVersion: 1, Version: o.version, Commit: o.commit, RunURL: o.run, RunAttempt: o.attempt, Provenance: provenanceNote}
 	if header.RepoCoverage.SchemaVersion == c.RuntimeSchemaVersion {
 		m.SchemaVersion = 2
 		m.Scope = c.RuntimeScope
@@ -676,7 +682,16 @@ func verify(args []string) error {
 	if e = validateReports(o, native, container); e != nil {
 		return e
 	}
-	index, scope := rootDocuments(o.version, native, container)
+	format, e := presentationFormat(files["manifest.json"], historical)
+	if e != nil {
+		return e
+	}
+	var index, scope []byte
+	if format == "legacy" {
+		index, scope = legacyRootDocuments(o.version, native, container)
+	} else {
+		index, scope = overviewRootDocuments(o.version, native, container)
+	}
 	if string(files["index.html"]) != string(index) || string(files["report_scope.md"]) != string(scope) {
 		return errors.New("archive index or scope mismatch")
 	}
