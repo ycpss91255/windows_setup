@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 	a "windows_setup/script/test/acceptance"
+	c "windows_setup/script/test/repo_coverage"
 )
 
 const base = "https://example.github.io/windows_setup/"
@@ -76,6 +77,12 @@ func flag(b bool) *bool { return &b }
 func badge(r a.Report, n string) []byte {
 	value := a.BadgeStatus(r, n)
 	label := n + " " + strings.ToLower(r.RefType)
+	attrs := ""
+	if n == "coverage" && r.RepoCoverage != nil && r.RepoCoverage.SchemaVersion == c.RuntimeSchemaVersion {
+		label = "runtime PowerShell/C#"
+		scope := label + " " + strings.ToLower(r.RefType) + ": " + value
+		attrs = fmt.Sprintf(` aria-label="%s"><title>%s</title`, scope, scope)
+	}
 	l, q := len(label)*7+12, len(value)*7+12
 	color := "#9f9f9f"
 	if n == "coverage" && r.RepoCoverage != nil && r.RepoCoverage.Result.Complete {
@@ -85,7 +92,7 @@ func badge(r a.Report, n string) []byte {
 	} else if value == "failed" {
 		color = "#e05d44"
 	}
-	return []byte(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" height="20" width="%d"><rect width="%d" fill="#555"/><rect width="%d" fill="%s"/><g font-size="11"><text>%s</text><text>%s</text></g></svg>`, l+q, l, q, color, label, value))
+	return []byte(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" height="20" width="%d"%s><rect width="%d" fill="#555"/><rect width="%d" fill="%s"/><g font-size="11"><text>%s</text><text>%s</text></g></svg>`, l+q, attrs, l, q, color, label, value))
 }
 func synthetic(t *testing.T, original map[string][]byte, passed bool, ref string) map[string][]byte {
 	t.Helper()
@@ -174,10 +181,14 @@ func portal(t *testing.T, m map[string][]byte) map[string][]byte {
 		t.Fatal(e)
 	}
 	identity := "提交 <code>" + r.Commit[:7] + "</code> 檢查時間：" + stamp.UTC().Format("2006-01-02 15:04:05") + " UTC"
-	overview := "<h2>整體覆蓋率</h2><p>尚未提供完整量測。</p>"
+	coverageLabel := "整體覆蓋率"
+	if r.RepoCoverage != nil && r.RepoCoverage.SchemaVersion == c.RuntimeSchemaVersion {
+		coverageLabel = "PowerShell/C# runtime 覆蓋率"
+	}
+	overview := "<h2>" + coverageLabel + "</h2><p>尚未提供完整量測。</p>"
 	if r.RepoCoverage != nil && r.RepoCoverage.Result.Complete {
 		c := r.RepoCoverage.Result
-		overview = fmt.Sprintf("<h2>整體覆蓋率</h2><p>%.1f%%（%d/%d 可執行行）</p>", *c.Percent, c.Covered, c.Executable)
+		overview = fmt.Sprintf("<h2>%s</h2><p>%.1f%%（%d/%d 可執行行）</p>", coverageLabel, *c.Percent, c.Covered, c.Executable)
 	}
 	p["index.html"] = []byte(overview + `<h1>` + title + `</h1><a href="main/index.html">結果</a><a href="https://github.com/example/windows_setup/blob/main/readme.md">說明</a>` + identity)
 	p["versions.json"] = []byte(`[]`)

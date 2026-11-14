@@ -27,7 +27,7 @@ try {
  $env:WINDOWS_SETUP_PORTAL_FIXTURE_DIR=Join-Path $fixture 'portal'
  Invoke-ContainerGoTestPhase -Plan $plan -SourceRoot C:/workspace -ReportDirectory C:/reports
  Write-Host ('Phase 4: source and report requirements gate / '+$plan.Mode)
- Invoke-ContainerGo -Arguments @('run','./script/test/requirements_gate','--artifact-dir',$plan.ArtifactDirectory,'--source-root','C:/workspace','--expected-sha',$plan.Commit,'--expected-run-url',$plan.RunUrl)
+ Invoke-ContainerGo -Arguments @('run','./script/test/requirements_gate','--tests-only','--artifact-dir',$plan.ArtifactDirectory,'--source-root','C:/workspace','--expected-sha',$plan.Commit,'--expected-run-url',$plan.RunUrl)
  exit 0
 } catch {
  $failure=$_

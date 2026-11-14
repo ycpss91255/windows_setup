@@ -139,6 +139,37 @@ func TestNativeStageTransportPreservesBytesAndPartialState(t *testing.T) {
 	}
 }
 
+func TestRuntimeNativeStageDoesNotRequireGoCoverage(t *testing.T) {
+	f := newNativeStageFixture(t)
+	stage, restored := filepath.Join(t.TempDir(), "stage"), filepath.Join(t.TempDir(), "restored")
+	base := []string{"--runtime", "--source-root", f.root, "--expected-sha", f.sha, "--expected-run-url", f.run, "--run-attempt", "2"}
+	pack := append([]string{"native-stage-pack"}, base...)
+	pack = append(pack, "--report-dir", f.report, "--output-dir", stage)
+	if err := run(pack, &bytes.Buffer{}); err != nil {
+		t.Fatalf("runtime stage required Go coverage: %v", err)
+	}
+	restore := append([]string{"native-stage-restore"}, base...)
+	restore = append(restore, "--input-dir", stage, "--output-dir", restored)
+	if err := run(restore, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	legacyRestore := f.args("native-stage-restore", stage, filepath.Join(t.TempDir(), "legacy"))
+	if err := run(legacyRestore, &bytes.Buffer{}); err == nil {
+		t.Fatal("runtime stage accepted as historical native and Go stage")
+	}
+	if _, err := os.Stat(filepath.Join(restored, "go")); !os.IsNotExist(err) {
+		t.Fatalf("runtime stage unexpectedly requires Go coverage: %v", err)
+	}
+	before, err := os.ReadFile(filepath.Join(f.report, "summary.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(filepath.Join(restored, "report", "summary.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("native report changed: %v", err)
+	}
+}
+
 func TestNativeStageRejectsIdentityTamperAndIncompleteInputs(t *testing.T) {
 	for _, kind := range []string{"wrong_sha", "wrong_run", "wrong_attempt", "missing_report", "extra_report", "missing_go", "tampered_go", "dirty_source", "existing_output", "output_inside_source", "report_failure", "report_unit_only", "report_old_schema", "report_claimed_coverage", "missing_suite"} {
 		t.Run(kind, func(t *testing.T) {

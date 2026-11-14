@@ -13,6 +13,11 @@ $temp=Join-Path ([IO.Path]::GetTempPath()) ('managed_scope_'+[guid]::NewGuid().T
 New-Item -ItemType Directory -Path (Join-Path $source 'test/fixtures') -Force|Out-Null;[IO.File]::WriteAllText((Join-Path $source 'test/fixtures/fake.cs'),'test is not production')
 $inventory=@(Get-ManagedSourceInventory -SourceRoot $source)
 Assert ($inventory.Count -eq 1 -and $inventory[0].Path -eq 'modules/native/example.cs' -and $inventory[0].SHA256 -eq (Get-FileHash (Join-Path $source 'modules/native/example.cs')).Hash.ToLowerInvariant()) 'inventory includes actual production source and excludes explicit test tree'
+New-Item -ItemType Directory -Path (Join-Path $source 'modules/demo/native'),(Join-Path $source 'script/test/native') -Force|Out-Null
+[IO.File]::WriteAllText((Join-Path $source 'modules/demo/native/real.cs'),'public class RuntimeExample {}')
+[IO.File]::WriteAllText((Join-Path $source 'script/test/native/support.cs'),'public class SupportExample {}')
+$runtimeInventory=@(Get-ManagedSourceInventory -SourceRoot $source -Runtime)
+Assert ($runtimeInventory.Count -eq 1 -and $runtimeInventory[0].Path -ceq 'modules/demo/native/real.cs') 'runtime managed inventory excludes maintenance support and unapproved paths'
 $rejected=$false;try{Assert-ManagedOutputLocation $source (Join-Path $source 'output')}catch{$rejected=$true}
 Assert $rejected 'collector cannot generate artifacts inside reviewed source'
 $rejected=$false;try{Assert-ManagedOutputLocation $source $temp}catch{$rejected=$true}

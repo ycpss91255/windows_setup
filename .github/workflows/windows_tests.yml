@@ -169,29 +169,22 @@ jobs:
         if: always()
         run: |
           & .\script\test\create_portal_fixture.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'requirements-fixture')
-      - name: 量測全部自有 Go 與 CLI 並要求八成
+      - name: 執行全部 Go 維護工具測試
         env:
           WINDOWS_SETUP_ARTIFACT_DIR: ${{ runner.temp }}/NUC-CI-Results/public
           WINDOWS_SETUP_PORTAL_FIXTURE_DIR: ${{ runner.temp }}/requirements-fixture/portal
         run: |
-          & .\script\test\measure_go_coverage.ps1 -SourceRoot $PWD.Path -ReportDirectory $env:WINDOWS_SETUP_ARTIFACT_DIR -OutputDirectory (Join-Path $env:RUNNER_TEMP 'go-coverage')
-      - name: 封裝尚未完成整體覆蓋率的原生與 Go 證據
+          . .\script\test\ci_tasks.ps1
+          Invoke-CINative -File go.exe -Arguments @('test','-mod=vendor','-count=1','./...')
+      - name: 封裝尚未完成 runtime 覆蓋率的原生證據
         run: |
           . .\script\test\ci_tasks.ps1
-          Invoke-CINative -File go.exe -Arguments @('run','./script/test/repo_coverage_tool','native-stage-pack','--source-root',$PWD.Path,'--report-dir',(Join-Path $env:RUNNER_TEMP 'NUC-CI-Results/public'),'--go-dir',(Join-Path $env:RUNNER_TEMP 'go-coverage'),'--output-dir',(Join-Path $env:RUNNER_TEMP 'native-stage'),'--expected-sha',$env:GITHUB_SHA,'--expected-run-url',("https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"),'--run-attempt',$env:GITHUB_RUN_ATTEMPT)
+          Invoke-CINative -File go.exe -Arguments @('run','./script/test/repo_coverage_tool','native-stage-pack','--runtime','--source-root',$PWD.Path,'--report-dir',(Join-Path $env:RUNNER_TEMP 'NUC-CI-Results/public'),'--output-dir',(Join-Path $env:RUNNER_TEMP 'native-stage'),'--expected-sha',$env:GITHUB_SHA,'--expected-run-url',("https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"),'--run-attempt',$env:GITHUB_RUN_ATTEMPT)
       - name: 僅保留不可發布的同次原生中介證據七天
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: native-stage-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/native-stage/
-          retention-days: 7
-          if-no-files-found: error
-      - name: 保留獨立 Go 覆蓋率證據七天
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: go-coverage-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/go-coverage/
           retention-days: 7
           if-no-files-found: error
       - name: 保留合成驗收樣本七天
@@ -235,22 +228,19 @@ jobs:
       - name: 先核對原位元組身分與未完成狀態才還原
         run: |
           . .\script\test\ci_tasks.ps1
-          Invoke-CINative -File go.exe -Arguments @('run','./script/test/repo_coverage_tool','native-stage-restore','--source-root',$PWD.Path,'--input-dir',(Join-Path $env:RUNNER_TEMP 'native-stage-input'),'--output-dir',(Join-Path $env:RUNNER_TEMP 'native-stage-import'),'--expected-sha',$env:GITHUB_SHA,'--expected-run-url',("https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"),'--run-attempt',$env:GITHUB_RUN_ATTEMPT)
-      - name: 附加分項 Go 證據
-        run: |
-          & .\script\test\attach_go_coverage.ps1 -PublicDirectory (Join-Path $env:RUNNER_TEMP 'native-stage-import/report') -CoverageDirectory (Join-Path $env:RUNNER_TEMP 'native-stage-import/go') -PreparingRelease:($env:GITHUB_REF_TYPE -eq 'tag')
+          Invoke-CINative -File go.exe -Arguments @('run','./script/test/repo_coverage_tool','native-stage-restore','--runtime','--source-root',$PWD.Path,'--input-dir',(Join-Path $env:RUNNER_TEMP 'native-stage-input'),'--output-dir',(Join-Path $env:RUNNER_TEMP 'native-stage-import'),'--expected-sha',$env:GITHUB_SHA,'--expected-run-url',("https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"),'--run-attempt',$env:GITHUB_RUN_ATTEMPT)
       - name: 當地量測 managed 原生程式完整計數點
         run: |
-          & .\script\test\managed_coverage.ps1 -SourceRoot $PWD.Path -OutputDirectory (Join-Path $env:RUNNER_TEMP 'managed-coverage')
+          & .\script\test\managed_coverage.ps1 -SourceRoot $PWD.Path -OutputDirectory (Join-Path $env:RUNNER_TEMP 'managed-coverage') -Runtime
       - name: 下載同次與同 attempt 的完整 PowerShell 四片
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           pattern: powershell-shard-${{ github.run_id }}-${{ github.run_attempt }}-*
           path: ${{ runner.temp }}/powershell-shards
           merge-multiple: false
-      - name: 收集四語言整體覆蓋率並強制完整八成
+      - name: 收集 PowerShell 與 C# runtime 覆蓋率並強制完整八成
         run: |
-          & .\script\test\run_repo_coverage.ps1 -SourceRoot $PWD.Path -PublicDirectory (Join-Path $env:RUNNER_TEMP 'native-stage-import/report') -GoCoverageDirectory (Join-Path $env:RUNNER_TEMP 'native-stage-import/go') -ManagedEvidencePath (Join-Path $env:RUNNER_TEMP 'managed-coverage/evidence.json') -OutputDirectory (Join-Path $env:RUNNER_TEMP 'repo-coverage') -PowerShellShardDirectory (Join-Path $env:RUNNER_TEMP 'powershell-shards') -RunAttempt ([int]$env:GITHUB_RUN_ATTEMPT)
+          & .\script\test\run_repo_coverage.ps1 -SourceRoot $PWD.Path -PublicDirectory (Join-Path $env:RUNNER_TEMP 'native-stage-import/report') -ManagedEvidencePath (Join-Path $env:RUNNER_TEMP 'managed-coverage/evidence.json') -OutputDirectory (Join-Path $env:RUNNER_TEMP 'repo-coverage') -PowerShellShardDirectory (Join-Path $env:RUNNER_TEMP 'powershell-shards') -RunAttempt ([int]$env:GITHUB_RUN_ATTEMPT)
       - name: 顯示已驗證的同次品質摘要
         run: |
           . .\script\test\ci_quality_summary.ps1
@@ -332,8 +322,8 @@ jobs:
           WINDOWS_SETUP_PORTAL_FIXTURE_DIR: ${{ github.workspace }}/acceptance-fixture
         run: |
           go test -count=1 ./...
-          go run ./script/test/requirements_gate --artifact-dir acceptance-artifact --source-root . --expected-sha "$EXPECTED_SHA" --expected-run-url "$EXPECTED_RUN_URL"
-          go run ./script/test/repo_coverage_tool verify --artifact-dir acceptance-artifact --source-root . --expected-sha "$EXPECTED_SHA" --expected-run-url "$EXPECTED_RUN_URL" --require-complete --minimum-percent 80
+          go run ./script/test/requirements_gate --require-runtime --artifact-dir acceptance-artifact --source-root . --expected-sha "$EXPECTED_SHA" --expected-run-url "$EXPECTED_RUN_URL"
+          go run ./script/test/repo_coverage_tool verify --runtime --artifact-dir acceptance-artifact --source-root . --expected-sha "$EXPECTED_SHA" --expected-run-url "$EXPECTED_RUN_URL" --require-complete --minimum-percent 80
 
   docker-tests:
     name: docker-tests
@@ -395,7 +385,7 @@ jobs:
           $public = Join-Path $env:RUNNER_TEMP 'windows-container-results/public'
           . .\script\test\ci_tasks.ps1
           Assert-CIContainerReport -Directory $public
-          Invoke-CINative -File go.exe -Arguments @('run','./script/test/requirements_gate','--artifact-dir',$public,'--source-root','.','--expected-sha',$env:EXPECTED_SHA,'--expected-run-url',$env:EXPECTED_RUN_URL)
+          Invoke-CINative -File go.exe -Arguments @('run','./script/test/requirements_gate','--tests-only','--artifact-dir',$public,'--source-root','.','--expected-sha',$env:EXPECTED_SHA,'--expected-run-url',$env:EXPECTED_RUN_URL)
       - name: 僅保留容器去識別報告七天
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -551,7 +541,7 @@ jobs:
           . .\script\test\ci_tasks.ps1
           $parameters = Get-CIPortalParameters -Repository $env:GH_REPO -OutputDirectory "$env:RUNNER_TEMP\portal-inputs" -EventRef $env:EVENT_REF -RunId $env:CURRENT_RUN -EventName $env:EVENT_NAME -RunAttempt ([int]$env:CURRENT_ATTEMPT)
           $inputs = .\script\report\get_portal_inputs.ps1 @parameters
-          .\script\report\build_portal.ps1 -CatalogPath $inputs.CatalogPath -MainSnapshotPath $inputs.MainSnapshotPath -OutputDirectory "$env:RUNNER_TEMP\quality-portal" -RequireGoCoverage
+          .\script\report\build_portal.ps1 -CatalogPath $inputs.CatalogPath -MainSnapshotPath $inputs.MainSnapshotPath -OutputDirectory "$env:RUNNER_TEMP\quality-portal"
       - name: 保存去識別 portal 供 Linux 部署
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -642,4 +632,4 @@ jobs:
         run: |
           gh api "repos/$RELEASE_REPO/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release-metadata.json"
           go build -o "$RUNNER_TEMP/report-bundle-tool" ./script/test/report_bundle_tool
-          go run ./script/test/verify_deployment --mode release --base-url https://ycpss91255.github.io/windows_setup/ --readme readme.md --expected-sha "$EXPECTED_SHA" --expected-run-url "$EXPECTED_RUN_URL" --tag "$RELEASE_TAG" --release-metadata "$RUNNER_TEMP/release-metadata.json" --report-bundle-tool "$RUNNER_TEMP/report-bundle-tool" --report-archive "$RUNNER_TEMP/tag-report-download/windows_setup_report_${RELEASE_TAG}.zip" --run-attempt "$GITHUB_RUN_ATTEMPT" --download-release-asset --release-repository "$RELEASE_REPO"
+          go run ./script/test/verify_deployment --mode release --require-runtime --base-url https://ycpss91255.github.io/windows_setup/ --readme readme.md --expected-sha "$EXPECTED_SHA" --expected-run-url "$EXPECTED_RUN_URL" --tag "$RELEASE_TAG" --release-metadata "$RUNNER_TEMP/release-metadata.json" --report-bundle-tool "$RUNNER_TEMP/report-bundle-tool" --report-archive "$RUNNER_TEMP/tag-report-download/windows_setup_report_${RELEASE_TAG}.zip" --run-attempt "$GITHUB_RUN_ATTEMPT" --download-release-asset --release-repository "$RELEASE_REPO"

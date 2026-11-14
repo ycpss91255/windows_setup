@@ -118,6 +118,28 @@ func TestCollectInputCases(t *testing.T) {
 		return err
 	}
 	t.Run("required_inputs", func(t *testing.T) { reject(t, nil) })
+	t.Run("runtime_scope_without_go_coverage", func(t *testing.T) {
+		output := filepath.Join(t.TempDir(), "runtime")
+		argv := []string{"--runtime", "--source-root", source, "--output-dir", output, "--expected-sha", sha, "--powershell-evidence", filepath.Join(raw, "ps.json")}
+		if err := collect(argv, &bytes.Buffer{}); err != nil {
+			t.Fatalf("runtime collection requires Go coverage: %v", err)
+		}
+		var data [3][]byte
+		for i, name := range []string{"repo_coverage.json", "coverage_inventory.json", "coverage.xml"} {
+			var e error
+			data[i], e = os.ReadFile(filepath.Join(output, name))
+			if e != nil {
+				t.Fatal(e)
+			}
+		}
+		proof, err := rc.ValidateRuntimeEvidence(data[0], data[1], data[2], sha, "")
+		if err != nil || !proof.Result.Complete || proof.Result.Covered != 1 || proof.Result.Executable != 1 {
+			t.Fatalf("runtime proof: %+v %v", proof, err)
+		}
+		if err := rc.ValidateRuntimeInventory(source, data[1]); err != nil {
+			t.Fatal(err)
+		}
+	})
 	t.Run("inside_source_output", func(t *testing.T) { reject(t, args(filepath.Join(source, "coverage"))) })
 	t.Run("existing_output", func(t *testing.T) { reject(t, args(t.TempDir())) })
 	t.Run("source_commit_mismatch", func(t *testing.T) {

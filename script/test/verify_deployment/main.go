@@ -18,6 +18,33 @@ import (
 
 var deploymentSleep = time.Sleep
 
+func releaseGoFiles(root string, bundle *verifiedBundle) ([]string, error) {
+	if bundle != nil && bundle.CoverageScope == c.RuntimeScope {
+		return nil, nil
+	}
+	return a.OwnedGoFiles(root)
+}
+
+func requireCurrentRuntimeCoverage(e *c.Evidence) error {
+	if e == nil || e.SchemaVersion != c.RuntimeSchemaVersion || e.Metric != c.RuntimeMetric || e.Scope != c.RuntimeScope {
+		return fmt.Errorf("current deployment requires runtime PowerShell/C# coverage")
+	}
+	return nil
+}
+
+func validatePublishedInventory(evidence *c.Evidence, root string, inventory []byte) error {
+	if evidence == nil {
+		return fmt.Errorf("missing coverage evidence")
+	}
+	if evidence.SchemaVersion == c.RuntimeSchemaVersion {
+		if evidence.Metric != c.RuntimeMetric || evidence.Scope != c.RuntimeScope {
+			return fmt.Errorf("runtime scope mismatch")
+		}
+		return c.ValidateRuntimeInventory(root, inventory)
+	}
+	return c.ValidateInventory(root, inventory)
+}
+
 func run() error {
 	mode := flag.String("mode", "branch", "branch or release")
 	tag := flag.String("tag", "", "release tag")
@@ -27,6 +54,7 @@ func run() error {
 	bundleTool := flag.String("report-bundle-tool", "", "trusted report verifier executable")
 	archive := flag.String("report-archive", "", "downloaded report archive")
 	attempt := flag.Int("run-attempt", 0, "expected run attempt")
+	requireRuntime := flag.Bool("require-runtime", false, "require current release runtime report bundle")
 	portalDir := flag.String("portal-dir", "", "validated same-run portal artifact")
 	latestMetadata := flag.String("latest-release-metadata", "", "immutable latest release metadata")
 	base := flag.String("base-url", "", "HTTPS Pages root")
@@ -47,10 +75,6 @@ func run() error {
 		return e
 	}
 	b, e := os.ReadFile(*doc)
-	if e != nil {
-		return e
-	}
-	files, e := a.OwnedGoFiles(".")
 	if e != nil {
 		return e
 	}
@@ -76,8 +100,15 @@ func run() error {
 		if err != nil {
 			return err
 		}
+		if *requireRuntime && (bundle == nil || bundle.CoverageScope != c.RuntimeScope) {
+			return fmt.Errorf("current release requires verified runtime bundle")
+		}
+		files, err := releaseGoFiles(".", bundle)
+		if err != nil {
+			return err
+		}
 		for i := 0; i < 12; i++ {
-			err = verifyTag(read, data, *tag, *sha, *run, files, bundle)
+			err = verifyTag(read, data, *tag, *sha, *run, files, bundle, *requireRuntime)
 			if err == nil {
 				fmt.Printf("公開版本驗收通過：%s %s\n", *tag, *sha)
 				return nil
@@ -88,7 +119,7 @@ func run() error {
 		}
 		return err
 	}
-	if *mode != "branch" || *tag != "" || *metadata != "" || *bundleTool != "" || *archive != "" || *attempt != 0 || *download || *repository != "" {
+	if *mode != "branch" || *tag != "" || *metadata != "" || *bundleTool != "" || *archive != "" || *attempt != 0 || *download || *repository != "" || *requireRuntime {
 		return fmt.Errorf("invalid deployment mode")
 	}
 	requiredVersion := ""
@@ -123,14 +154,14 @@ func run() error {
 		if err != nil {
 			return err
 		}
+		if err = requireCurrentRuntimeCoverage(measured); err != nil {
+			return err
+		}
 		inventory, err := reportReader("coverage_inventory.json")
 		if err != nil {
 			return err
 		}
-		if err = c.ValidateInventory(".", inventory); err != nil {
-			return err
-		}
-		if err = a.ValidateGoCoverageReport(reportReader, files, *sha, *run, false); err != nil {
+		if err = validatePublishedInventory(measured, ".", inventory); err != nil {
 			return err
 		}
 		if *portalDir != "" {
@@ -173,7 +204,7 @@ func run() error {
 	if svg.XMLName.Local != "svg" || svg.XMLName.Space != "http://www.w3.org/2000/svg" {
 		return fmt.Errorf("R05 GitHub CI 徽章不是SVG")
 	}
-	summary := fmt.Sprintf("## 公開部署需求驗收通過\n\n- 本次 main 提交：`%s`\n- 報告執行：%s\n- 首頁、測試報告、整體徽章與三份永久覆蓋率證據可讀，來源清單與本次checkout一致。\n- 整體可執行行覆蓋率：%.1f%%（%d/%d），完整量測且精確八成門檻通過。\n", r.Commit, r.RunUrl, *measured.Result.Percent, measured.Result.Covered, measured.Result.Executable)
+	summary := fmt.Sprintf("## 公開部署需求驗收通過\n\n- 本次 main 提交：`%s`\n- 報告執行：%s\n- 首頁、測試報告、runtime 徽章與三份覆蓋率證據可讀，來源清單與本次 checkout 一致。\n- PowerShell/C# runtime 可執行行覆蓋率：%.1f%%（%d/%d），完整量測且精確八成門檻通過；不含 CMD 與 Go。\n", r.Commit, r.RunUrl, *measured.Result.Percent, measured.Result.Covered, measured.Result.Executable)
 	languages := []string{}
 	for language := range measured.Result.Languages {
 		languages = append(languages, language)

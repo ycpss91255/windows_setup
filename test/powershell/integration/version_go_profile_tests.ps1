@@ -2,7 +2,18 @@
 $ErrorActionPreference='Stop'
 # Reuse the real complete-coverage CLI fixture and mock publish/download flow.
 . (Join-Path $PSScriptRoot 'repo_publication_tests.ps1')
-Assert ((Get-FileHash (Join-Path $downloaded.AssetDirectory 'go_coverage.out')).Hash -eq (Get-FileHash (Join-Path $public 'go_coverage.out')).Hash) '實際publisher附件經下載後仍保留同一Go原始profile'
+Assert (-not (Test-Path -LiteralPath (Join-Path $downloaded.AssetDirectory 'go_coverage.out')) -and (Get-FileHash (Join-Path $downloaded.AssetDirectory 'coverage.xml')).Hash -eq (Get-FileHash (Join-Path $public 'coverage.xml')).Hash) '新版附件經下載保留原 runtime 證據且不含 Go profile'
+$legacyPublic=Join-Path $fixture 'legacy_go_public';New-Item -ItemType Directory $legacyPublic|Out-Null
+$legacyCoverage=$c|ConvertTo-Json -Depth 20|ConvertFrom-Json;$legacyCoverage.SchemaVersion=1;$legacyCoverage.Metric='complete-executable-lines-v1';$legacyCoverage.PSObject.Properties.Remove('Scope')
+$legacyReport=$report|ConvertTo-Json -Depth 20|ConvertFrom-Json;$legacyReport.RepoCoverage=$legacyCoverage
+$goProfileText="mode: set`nwindows_setup/script/test/example/value.go:1.1,1.2 8 1`nwindows_setup/script/test/example/value.go:2.1,2.2 2 0`n"
+[IO.File]::WriteAllText((Join-Path $legacyPublic 'go_coverage.out'),$goProfileText,$utf8)
+$go=[pscustomobject]@{SchemaVersion=1;Scope='all-owned-go-including-cli';Metric='statements';Covered=8;TotalStatements=10;Percent=80.0;Threshold=80;Commit=$identity.Commit;RunUrl=$identity.RunUrl;MeasuredAt=$identity.MeasuredAt;SourceState='Clean';GoVersion='go1.27.3';Environment='Synthetic legacy fixture';ProfileSHA256=(Get-FileHash (Join-Path $legacyPublic 'go_coverage.out')).Hash.ToLowerInvariant();Packages=@('windows_setup/script/test/example')}
+$legacyReport|Add-Member -NotePropertyName GoCoverage -NotePropertyValue $go
+Write-SnapshotView $legacyReport $legacyPublic
+foreach($name in @('coverage_inventory.json','coverage.xml')){Copy-Item -LiteralPath (Join-Path $public $name) -Destination $legacyPublic}
+[IO.File]::WriteAllText((Join-Path $legacyPublic 'repo_coverage.json'),($legacyCoverage|ConvertTo-Json -Depth 20),$utf8)
+$public=$legacyPublic;$report=$legacyReport
 function New-GoVersionEvidence {
  param([string]$Directory,$Snapshot,[switch]$WithProfile)
  New-Item -ItemType Directory $Directory|Out-Null
@@ -19,6 +30,27 @@ $versionFixture=Join-Path $fixture 'go_versions';New-Item -ItemType Directory $v
 $current=New-GoVersionEvidence -Directory (Join-Path $versionFixture 'current') -Snapshot $report -WithProfile
 $verified=Test-PortalReleaseEvidence -Entry $current -CoverageToolPath $tool
 Assert $verified.HasGoProfile '原始Go覆蓋率只在manifest、GitHub digest與真內容皆驗證後可用'
+$global:repoDownloadSource=$current.AssetDirectory
+$global:repoDownloadRelease=[pscustomobject]@{draft=$false;tag_name='v1.0.0';immutable=$true;html_url=$current.ReleaseUrl;assets=@($current.AssetDigests|ForEach-Object {@{name=$_.Name;digest=$_.Digest}})}
+function gh {
+ $words=@($args);$global:LASTEXITCODE=0
+ if($words[0] -eq 'api' -and $words -contains '--paginate'){return ($global:repoDownloadRelease|ConvertTo-Json -Depth 10 -Compress)}
+ if($words[0] -eq 'api' -and $words[1] -like '*/commits/*'){return 'a'*40}
+ if($words[0] -eq 'api' -and $words[1] -like '*/actions/workflows/*'){return}
+ if($words[0] -eq 'release' -and $words[1] -eq 'download'){
+  $destination=$words[[Array]::IndexOf($words,'--dir')+1]
+  for($i=0;$i -lt $words.Count;$i++){if($words[$i] -eq '--pattern'){Copy-Item -LiteralPath (Join-Path $global:repoDownloadSource $words[$i+1]) -Destination (Join-Path $destination $words[$i+1])}}
+  return
+ }
+ throw ('Unexpected historical mock download call: '+($words -join ' '))
+}
+try{
+ Assert ((Get-Command gh).CommandType -eq 'Function') '歷史附件下載只使用 mock gh'
+ $legacyInputs=& (Join-Path $root 'script/report/get_portal_inputs.ps1') -Repository example/repo -OutputDirectory (Join-Path $versionFixture 'historical_download')
+ $legacyDownloaded=@(Get-Content $legacyInputs.CatalogPath -Raw -Encoding UTF8|ConvertFrom-Json)[0]
+ $legacyDownloadedEvidence=Test-PortalReleaseEvidence -Entry $legacyDownloaded -CoverageToolPath $tool
+ Assert ($legacyDownloadedEvidence.HasGoProfile -and (Get-FileHash (Join-Path $legacyDownloaded.AssetDirectory 'go_coverage.out')).Hash -eq (Get-FileHash (Join-Path $public 'go_coverage.out')).Hash) '歷史不可變附件經下載驗證仍保留同一 Go 原始 profile'
+}finally{Remove-Item Function:\gh}
 $cat=Join-Path $versionFixture 'catalog.json';[IO.File]::WriteAllText($cat,(ConvertTo-Json -InputObject @($current) -Depth 10),$utf8)
 $out=Join-Path $versionFixture 'current_portal'
 & (Join-Path $root 'script/report/build_portal.ps1') -Preview -CatalogPath $cat -OutputDirectory $out -CoverageToolPath $tool|Out-Null
@@ -61,7 +93,7 @@ $global:repoPublicationRemoteCalled=$false
 function gh {$global:repoPublicationRemoteCalled=$true;throw 'unexpected remote call'}
 $profile=Join-Path $public 'go_coverage.out';$savedProfile=[IO.File]::ReadAllText($profile);Remove-Item -LiteralPath $profile
 Assert ((Get-Command gh).CommandType -eq 'Function') '缺 profile 負例必須使用 mock gh'
-Refuse {& (Join-Path $root 'script/report/publish_quality_release.ps1') -PublicDirectory $public -Version v1.0.0 -Commit $identity.Commit -NotesPath (Join-Path $public 'summary.md') -Repository example/repo -CoverageToolPath $tool} '現版publisher缺原始profile時不能採legacy路徑發布'
+Refuse {& (Join-Path $root 'script/report/publish_quality_release.ps1') -PublicDirectory $public -Version v1.0.0 -Commit $identity.Commit -NotesPath (Join-Path $public 'summary.md') -Repository example/repo -CoverageToolPath $tool} '現版publisher拒絕缺profile的legacy口徑'
 Assert (-not $global:repoPublicationRemoteCalled) '缺profile在任何遠端操作前停止'
 [IO.File]::WriteAllText($profile,$savedProfile,$utf8)
 Remove-Item Function:\gh
@@ -71,8 +103,8 @@ $noGoReport=$report|ConvertTo-Json -Depth 20|ConvertFrom-Json;$noGoReport.PSObje
 $global:repoPublicationRemoteCalled=$false
 function gh {$global:repoPublicationRemoteCalled=$true;throw 'unexpected remote call'}
 Assert ((Get-Command gh).CommandType -eq 'Function') '缺 Go 負例必須使用 mock gh'
-Refuse {& (Join-Path $root 'script/report/publish_quality_release.ps1') -PublicDirectory $noGo -Version v1.0.0 -Commit $identity.Commit -NotesPath (Join-Path $noGo 'summary.md') -Repository example/repo -CoverageToolPath $tool} '現版publisher缺Go量測不得藉歷史相容降級'
-Assert (-not $global:repoPublicationRemoteCalled) '缺Go來源量測在任何遠端操作前停止'
+Refuse {& (Join-Path $root 'script/report/publish_quality_release.ps1') -PublicDirectory $noGo -Version v1.0.0 -Commit $identity.Commit -NotesPath (Join-Path $noGo 'summary.md') -Repository example/repo -CoverageToolPath $tool} '現版publisher不得將無Go的legacy口徑當成runtime'
+Assert (-not $global:repoPublicationRemoteCalled) 'legacy來源量測在任何遠端操作前停止'
 Remove-Item Function:\gh
 $lowGoDirectory=Join-Path $versionFixture 'low_go';New-Item -ItemType Directory $lowGoDirectory|Out-Null
 $lowGoProfile="mode: set`nwindows_setup/script/test/example/value.go:1.1,1.2 7 1`nwindows_setup/script/test/example/value.go:2.1,2.2 3 0`n"
@@ -86,6 +118,6 @@ $global:repoPublicationRemoteCalled=$false
 function gh {$global:repoPublicationRemoteCalled=$true;throw 'unexpected remote call'}
 $lowRefused=$false
 Assert ((Get-Command gh).CommandType -eq 'Function') '低覆蓋率負例必須使用 mock gh'
-try{& (Join-Path $root 'script/report/publish_quality_release.ps1') -PublicDirectory $lowGoDirectory -Version v1.0.0 -Commit $identity.Commit -NotesPath (Join-Path $lowGoDirectory 'summary.md') -Repository example/repo -CoverageToolPath $tool}catch{$lowRefused=$_.Exception.Message -like '*Go 覆蓋率不得低於精確八成*'}
-Assert ($lowRefused -and -not $global:repoPublicationRemoteCalled) '整體八成仍不得代替Go獨立八成，發布前明確拒絕'
+try{& (Join-Path $root 'script/report/publish_quality_release.ps1') -PublicDirectory $lowGoDirectory -Version v1.0.0 -Commit $identity.Commit -NotesPath (Join-Path $lowGoDirectory 'summary.md') -Repository example/repo -CoverageToolPath $tool}catch{$lowRefused=$_.Exception.Message -like '*舊口徑僅供歷史讀取*'}
+Assert ($lowRefused -and -not $global:repoPublicationRemoteCalled) '低Go歷史口徑保留可讀但不能作為新runtime發布'
 Remove-Item Function:\gh

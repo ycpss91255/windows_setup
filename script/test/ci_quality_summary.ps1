@@ -8,7 +8,9 @@ function New-CIQualitySummary {
  if(-not $Report.Success){$lines+='**測試失敗**'}
  $lines+=@('','| 範圍 | 覆蓋率 | 可執行行 |','| --- | ---: | ---: |')
  $r=$Report.RepoCoverage.Result
- $items=@([pscustomobject]@{Name='整體';Covered=$r.Covered;Executable=$r.Executable})+@($r.Languages.PSObject.Properties | Sort-Object Name | ForEach-Object {[pscustomobject]@{Name=$_.Name;Covered=$_.Value.Covered;Executable=$_.Value.Executable}})
+ $scope='整體'
+ if($Report.RepoCoverage.SchemaVersion -eq 2 -and $Report.RepoCoverage.Metric -ceq 'runtime-powershell-csharp-executable-lines-v2' -and $Report.RepoCoverage.Scope -ceq 'core-modules-powershell-and-modules-native-csharp'){$scope='PowerShell/C# runtime（core/modules 自有；不含 Go/CMD）'}
+ $items=@([pscustomobject]@{Name=$scope;Covered=$r.Covered;Executable=$r.Executable})+@($r.Languages.PSObject.Properties | Sort-Object Name | ForEach-Object {[pscustomobject]@{Name=$_.Name;Covered=$_.Value.Covered;Executable=$_.Value.Executable}})
  foreach($item in $items){$pct=if($item.Executable -gt 0){(100.0*$item.Covered/$item.Executable).ToString('0.0',[Globalization.CultureInfo]::InvariantCulture)+'%'}else{'未量測'};$lines+='| '+$item.Name+' | '+$pct+' | '+$item.Covered+'/'+$item.Executable+' |'}
  if($Report.GoCoverage){$g=$Report.GoCoverage;$lines+=@('',('Go 分項：'+([double]$g.Percent).ToString('0.0',[Globalization.CultureInfo]::InvariantCulture)+'%（'+$g.Covered+'/'+$g.TotalStatements+' statements；門檻 80%，與可執行行不同）'))}
  return ($lines -join "`n")

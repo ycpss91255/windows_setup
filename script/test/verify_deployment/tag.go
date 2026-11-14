@@ -19,6 +19,7 @@ type verifiedBundle struct {
 	Summary       []byte
 	Profile       []byte
 	ArchiveDigest string
+	CoverageScope string
 }
 
 type releaseMetadata struct {
@@ -29,7 +30,21 @@ type releaseMetadata struct {
 	Assets    []releaseAsset `json:"assets"`
 }
 
-func verifyTag(read a.Reader, metadata []byte, tag, sha, run string, files []string, bundle *verifiedBundle) error {
+func releaseRequiresGoProfile(e *c.Evidence, bundle *verifiedBundle) (bool, error) {
+	runtime := e != nil && e.SchemaVersion == c.RuntimeSchemaVersion && e.Metric == c.RuntimeMetric && e.Scope == c.RuntimeScope
+	if runtime {
+		if bundle == nil || bundle.CoverageScope != c.RuntimeScope {
+			return false, fmt.Errorf("runtime report requires matching bundle scope")
+		}
+		return false, nil
+	}
+	if bundle != nil && bundle.CoverageScope != "" {
+		return false, fmt.Errorf("legacy report requires legacy bundle scope")
+	}
+	return true, nil
+}
+
+func verifyTag(read a.Reader, metadata []byte, tag, sha, run string, files []string, bundle *verifiedBundle, requireRuntime bool) error {
 	if !regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc[1-9][0-9]*)?$`).MatchString(tag) {
 		return fmt.Errorf("invalid release tag")
 	}
@@ -58,9 +73,11 @@ func verifyTag(read a.Reader, metadata []byte, tag, sha, run string, files []str
 	}
 	if bundle != nil {
 		assets["quality.json"] = assetFromBytes("quality.json", bundle.Summary)
-		assets["go_coverage.out"] = assetFromBytes("go_coverage.out", bundle.Profile)
+		if bundle.CoverageScope == "" {
+			assets["go_coverage.out"] = assetFromBytes("go_coverage.out", bundle.Profile)
+		}
 	}
-	for _, n := range []string{"quality.json", "go_coverage.out"} {
+	for _, n := range []string{"quality.json"} {
 		v, ok := assets[n]
 		if !ok || v.Size <= 0 || !regexp.MustCompile(`^sha256:[a-f0-9]{64}$`).MatchString(v.Digest) {
 			return fmt.Errorf("missing or invalid release evidence: %s", n)
@@ -104,13 +121,6 @@ func verifyTag(read a.Reader, metadata []byte, tag, sha, run string, files []str
 	if !match(summary, assets["quality.json"]) {
 		return fmt.Errorf("published summary differs from immutable release")
 	}
-	profile, e := reader("go_coverage.out")
-	if e != nil {
-		return e
-	}
-	if !match(profile, assets["go_coverage.out"]) {
-		return fmt.Errorf("published profile differs from immutable release")
-	}
 	report, e := a.ValidateReport(reader, sha, run, false)
 	if e != nil {
 		return e
@@ -118,17 +128,37 @@ func verifyTag(read a.Reader, metadata []byte, tag, sha, run string, files []str
 	if report.MeasuredAt == "" || report.MeasuredAt != versionStamp || report.SchemaVersion != 2 || report.RefType != "Release" || report.RefName != tag || report.Version != tag || !report.Success || report.Totals.UnexecutedSuites != 0 {
 		return fmt.Errorf("published release report identity mismatch")
 	}
-	if _, e = a.ValidateRepoCoverageReport(reader, summary, sha, run, true); e != nil {
+	coverage, e := a.ValidateRepoCoverageReport(reader, summary, sha, run, true)
+	if e != nil {
 		return e
+	}
+	if requireRuntime {
+		if bundle == nil || bundle.CoverageScope != c.RuntimeScope || requireCurrentRuntimeCoverage(coverage) != nil {
+			return fmt.Errorf("current release requires matching runtime bundle")
+		}
+	}
+	requireProfile, e := releaseRequiresGoProfile(coverage, bundle)
+	if e != nil {
+		return e
+	}
+	if requireProfile {
+		asset, ok := assets["go_coverage.out"]
+		if !ok || asset.Size <= 0 || !regexp.MustCompile(`^sha256:[a-f0-9]{64}$`).MatchString(asset.Digest) {
+			return fmt.Errorf("missing or invalid release Go profile")
+		}
+		profile, err := reader("go_coverage.out")
+		if err != nil || !match(profile, asset) {
+			return fmt.Errorf("published profile differs from immutable release")
+		}
 	}
 	inventory, e := reader("coverage_inventory.json")
 	if e != nil {
 		return e
 	}
-	if e = c.ValidateInventory(".", inventory); e != nil {
+	if e = validatePublishedInventory(coverage, ".", inventory); e != nil {
 		return e
 	}
-	if e = a.ValidateGoCoverageReport(reader, files, sha, run, true); e != nil {
+	if e = a.ValidateGoCoverageReport(reader, files, sha, run, requireProfile); e != nil {
 		return e
 	}
 	pageBytes, e := reader("index.html")

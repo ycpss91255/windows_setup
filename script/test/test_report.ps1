@@ -66,7 +66,9 @@ function Write-TestReports {
  $refText=if($report.RefName -eq 'Unknown'){'本機執行'}else{$report.RefName}
  $md=@('# Windows 測試結果','',('**'+$conclusion+'**'),'',('版本：'+$versionText+' · '+$RefType+' / '+$refText),('提交：'+$report.Commit),('量測時間（UTC）：'+$MeasuredAt),('環境：'+$environmentText+' · '+$sourceText),'',('斷言：'+$report.Totals.AssertionsPassed+'/'+$report.Totals.AssertionsExecuted+'；失敗 '+$report.Totals.AssertionsFailed),'','| 層級 | 測試套件 | 狀態 | 通過／執行斷言 | 秒 |','| --- | --- | --- | --- | --- |')
  foreach($check in $display){$passed=@($check.Assertions|Where-Object Passed).Count;$md+='| '+$check.Layer+' | '+$check.Name.Replace('|','/')+' | '+$check.Status+' | '+$passed+'/'+$check.Assertions.Count+' | '+$check.DurationSeconds+' |'}
- $md+=@('',('整體程式碼覆蓋率：'+(Get-RepoCoverageSummary $RepoCoverage)))
+ $coverageHeading=if((Get-RepoCoverageScopeLabel $RepoCoverage) -eq 'PowerShell/C# runtime'){'PowerShell/C# runtime 覆蓋率'}else{'整體覆蓋率'}
+ $mdHeading=if($coverageHeading -eq '整體覆蓋率'){'整體程式碼覆蓋率'}else{$coverageHeading}
+ $md+=@('',($mdHeading+'：'+(Get-RepoCoverageSummary $RepoCoverage)))
  $md+=@(Get-RepoCoverageLanguages $RepoCoverage)
  if($null -ne $GoCoverage){$md+=@('',('Go 程式敘述覆蓋率（分項）：'+(Get-GoCoveragePercentText $GoCoverage)+'；'+$GoCoverage.Covered+'/'+$GoCoverage.TotalStatements+' statements；全部自有 Go 工具含 CLI，不含 PowerShell 或第三方程式，不等於整體覆蓋率。'))}
  if($report.RunUrl){$md+=@('',('[GitHub Actions 執行紀錄]('+$report.RunUrl+')'))}
@@ -78,7 +80,7 @@ function Write-TestReports {
  if($report.RunUrl){$body+=' · <a href="'+$report.RunUrl+'">GitHub Actions 執行紀錄</a>'};$body+='</p>'
  if($RefType -eq 'Release'){$body+='<p><a href="https://github.com/ycpss91255/windows_setup/releases/tag/'+$versionText+'">Release 下載與版本說明</a></p>'}
  elseif($report.Commit -match '^[a-fA-F0-9]{40}$'){$body+='<p><a href="https://github.com/ycpss91255/windows_setup/archive/'+$report.Commit+'.zip">下載本次提交原始碼</a>（依 README 準備必要資產）</p>'}
- $body+='<p><a href="summary.json">JSON 證據</a> · <a href="junit.xml">JUnit 結果</a> · <a href="summary.md">文字摘要</a></p><h2>整體覆蓋率</h2><p>'+[Net.WebUtility]::HtmlEncode((Get-RepoCoverageSummary $RepoCoverage))+'</p>'
+ $body+='<p><a href="summary.json">JSON 證據</a> · <a href="junit.xml">JUnit 結果</a> · <a href="summary.md">文字摘要</a></p><h2>'+[Net.WebUtility]::HtmlEncode($coverageHeading)+'</h2><p>'+[Net.WebUtility]::HtmlEncode((Get-RepoCoverageSummary $RepoCoverage))+'</p>'
  if($null -ne $RepoCoverage){$body+='<details><summary>語言分項</summary><ul>';foreach($line in @(Get-RepoCoverageLanguages $RepoCoverage)){$body+='<li>'+[Net.WebUtility]::HtmlEncode($line)+'</li>'};$body+='</ul><a href="repo_coverage.json">整體量測證據</a> · <a href="coverage_inventory.json">來源清單</a> · <a href="coverage.xml">逐行結果</a></details>'}
  if($null -ne $GoCoverage){
   $profileLink=if($OmitGoProfileLink){''}else{' · <a href="go_coverage.out">原始 Go 覆蓋率</a>'}
@@ -104,7 +106,7 @@ function Write-TestReports {
   $label=$badge+' '+$RefType.ToLowerInvariant();$color='#9f9f9f';$status='not measured'
   if($badge -in @('unit','integration')){$rows=@($safe|Where-Object {$_.Layer -eq $badge -and $_.Executed});$status=if(-not $rows.Count){'not run'}elseif(@($rows|Where-Object {-not $_.Passed}).Count){'failed'}else{'passed'};$color=if($status -eq 'passed'){'#4c1'}elseif($status -eq 'failed'){'#e05d44'}else{'#9f9f9f'}}
   if($badge -eq 'system'){$status='not run'}
-  if($badge -eq 'coverage'){$label=if($SchemaVersion -eq 1){'ps coverage'}else{'coverage'};if($null -ne $RepoCoverage -and $RepoCoverage.Result.Complete){$status=Get-RepoCoveragePercentText $RepoCoverage;$color='#007ec6'}}
+  if($badge -eq 'coverage'){$label=if($SchemaVersion -eq 1){'ps coverage'}elseif($null -ne $RepoCoverage -and $RepoCoverage.SchemaVersion -eq 2){'runtime PowerShell/C#'}else{'coverage'};if($null -ne $RepoCoverage -and $RepoCoverage.Result.Complete){$status=Get-RepoCoveragePercentText $RepoCoverage;$color='#007ec6'}}
   $scopeLabel=if($badge -eq 'coverage'){$label+' '+$RefType.ToLowerInvariant()}else{$label}
   $title=[Security.SecurityElement]::Escape($scopeLabel+': '+$status)
   $labelWidth=$label.Length*7+12;$valueWidth=$status.Length*7+12;$width=$labelWidth+$valueWidth

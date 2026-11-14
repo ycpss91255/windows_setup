@@ -21,6 +21,7 @@ import (
 type shardCLIOptions struct {
 	source, manifest, output, evidence, input, commit, runURL string
 	attempt, index, count                                     int
+	runtime                                                   bool
 }
 type shardCollectionManifest struct {
 	SourceRoot     string
@@ -40,6 +41,7 @@ func parseShardOptions(name string, args []string, out io.Writer) (shardCLIOptio
 	var o shardCLIOptions
 	f := flag.NewFlagSet(name, flag.ContinueOnError)
 	f.SetOutput(out)
+	f.BoolVar(&o.runtime, "runtime", false, "restrict inventory to runtime coverage")
 	f.StringVar(&o.source, "source-root", "", "original clean source")
 	f.StringVar(&o.manifest, "manifest", "", "canonical collection manifest")
 	f.StringVar(&o.commit, "expected-sha", "", "actual source commit")
@@ -114,14 +116,18 @@ func trustedShardCatalog(o shardCLIOptions) (string, rc.Inventory, rc.PowerShell
 	if err != nil || status != "" {
 		return "", inv, catalog, fmt.Errorf("source must remain clean")
 	}
-	inv, err = rc.ScanInventory(root)
+	if o.runtime {
+		inv, err = rc.ScanRuntimeInventory(root)
+	} else {
+		inv, err = rc.ScanInventory(root)
+	}
 	if err != nil {
 		return "", inv, catalog, err
 	}
 	if len(inv.Blockers) > 0 {
 		return "", inv, catalog, fmt.Errorf("source inventory contains unsupported executable inputs")
 	}
-	tracked, err := git("ls-files", "*.ps1")
+	tracked, err := git("ls-files", "*.ps1", "*.psm1")
 	if err != nil {
 		return "", inv, catalog, err
 	}

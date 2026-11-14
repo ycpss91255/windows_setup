@@ -96,7 +96,8 @@ $global:localGoCalls=0
 function go.exe {$global:localGoCalls++;$global:LASTEXITCODE=0}
 Invoke-ContainerGoTestPhase -Plan ([pscustomobject]@{Mode='LocalSynthetic'}) -SourceRoot $coverageSource -ReportDirectory (Join-Path $fixture 'local_report')
 Assert ($global:localGoCalls -eq 1) 'local container runs full Go tests without manufacturing clean coverage evidence'
-$failed=$false
-try{Invoke-ContainerGoTestPhase -Plan ([pscustomobject]@{Mode='CIActual'}) -SourceRoot $coverageSource -ReportDirectory (Join-Path $fixture 'ci_report')}catch{$failed=$_.Exception.Message -eq 'fixture measurement failed'}
-Assert $failed 'CI container propagates coverage measurement failure instead of falling back to local tests'
+Invoke-ContainerGoTestPhase -Plan ([pscustomobject]@{Mode='CIActual'}) -SourceRoot $coverageSource -ReportDirectory (Join-Path $fixture 'ci_report')
+Assert ($global:localGoCalls -eq 2) 'CI container runs Go tests without invoking the coverage collector'
+function go.exe {$global:LASTEXITCODE=23}
+Refuse {Invoke-ContainerGoTestPhase -Plan ([pscustomobject]@{Mode='CIActual'}) -SourceRoot $coverageSource -ReportDirectory (Join-Path $fixture 'ci_report')} 'CI container rejects failed Go tests'
 Remove-Item Function:/go.exe
