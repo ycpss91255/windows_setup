@@ -16,6 +16,11 @@ $output=Join-Path $fixture 'proof'
 & (Join-Path $root 'script/test/powershell_coverage.ps1') -ManifestPath $input -OutputDirectory $output *> (Join-Path $fixture 'private.log')
 Assert ($LASTEXITCODE -eq 0) '原生Pester worker確實執行該suite成功'
 $worker=Get-Content -LiteralPath (Join-Path $output 'worker_0.json') -Raw -Encoding UTF8|ConvertFrom-Json
+$timingPath=Join-Path $output 'worker_0.timing.json'
+Assert (Test-Path -LiteralPath $timingPath -PathType Leaf) '成功 worker 必須產生獨立計時收據'
+$timing=Get-Content -LiteralPath $timingPath -Raw -Encoding UTF8|ConvertFrom-Json
+Assert ($timing.Context.Commit -ceq $context.Commit -and $timing.Context.RunUrl -ceq $context.RunUrl -and $timing.Context.RunAttempt -eq 2 -and $timing.Context.GlobalIndex -eq 3 -and $timing.Context.TestFile -ceq $suite -and $timing.Context.TestSHA256 -ceq $worker.Context.TestSHA256) '計時收據必須綁定實際 suite 與來源執行身分'
+Assert (@($timing.Phases).Count -eq 3 -and @($timing.Phases|Where-Object {$_.Name -cin @('worker_setup','pester_instrumentation_and_test','serialization') -and $_.Milliseconds -ge 0}).Count -eq 3) '收據必須包含可觀測的三個非負階段，不虛構 Pester 內部分界'
 Assert ($null -ne $worker.Context) '原始worker必須親自記錄測試與runcontext，不可由pack貼標'
 Assert ($worker.Context.TestFile -ceq $suite -and $worker.Context.TestSHA256 -ceq (Get-FileHash (Join-Path $fixture $suite)).Hash.ToLowerInvariant()) '實際執行suite與當場SHA綁在原始worker內'
 Assert ($worker.Context.WrapperFile -ceq $wrapper -and $worker.Context.WrapperSHA256 -ceq (Get-FileHash (Join-Path $fixture $wrapper)).Hash.ToLowerInvariant()) '實際Pester wrapper來源與當場SHA不能替換'
