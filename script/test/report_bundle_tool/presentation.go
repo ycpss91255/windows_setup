@@ -23,18 +23,20 @@ func overviewRootDocuments(version string, native, container map[string][]byte) 
 	if passed {
 		status, tag = "程式檢查通過", "tag"
 	}
-	coverage := "尚未完整量測"
+	coverageHeadline, coverageDetail, coverageRow := "尚未完整量測", "尚未提供完整量測", "尚未完整量測"
 	if n.RepoCoverage != nil && n.RepoCoverage.Result.Complete {
 		q := n.RepoCoverage.Result
 		label := "整體覆蓋率"
 		if n.RepoCoverage.SchemaVersion == c.RuntimeSchemaVersion && n.RepoCoverage.Scope == c.RuntimeScope {
 			label = "PowerShell/C# runtime 覆蓋率"
 		}
-		coverage = fmt.Sprintf("%s：%.1f%%（%d/%d 可執行行）", label, 100*float64(q.Covered)/float64(q.Executable), q.Covered, q.Executable)
+		coverageHeadline = fmt.Sprintf("%.1f%%", 100*float64(q.Covered)/float64(q.Executable))
+		coverageDetail = fmt.Sprintf("%s：%d/%d 可執行行", label, q.Covered, q.Executable)
+		coverageRow = fmt.Sprintf("%s（%d/%d）", coverageHeadline, q.Covered, q.Executable)
 	}
 	var body strings.Builder
 	fmt.Fprintf(&body, `<section class="hero"><span class="%s">%s</span><h2>這份版本的自動檢查結果</h2><p>來源：版本 %s · 提交 <code>%s</code><br>量測時間（UTC）：%s</p><div class="nav"><a class="btn" href="https://github.com/ycpss91255/windows_setup/blob/%s/readme.md">查看本次來源的使用說明</a><a class="secondary" href="%s">查看執行紀錄</a></div></section>`, tag, status, html.EscapeString(version), html.EscapeString(n.Commit), html.EscapeString(n.MeasuredAt), html.EscapeString(n.Commit), html.EscapeString(n.RunUrl))
-	fmt.Fprintf(&body, `<div class="grid"><article class="card"><h3>測試狀態</h3><div class="big">%s</div><p class="muted">靜態、單元及隔離整合測試</p></article><article class="card"><h3>原生檢查項目（斷言）</h3><div class="big">%d / %d</div><p class="muted">%d 組測試 · 失敗 %d</p></article><article class="card"><h3>原生整體覆蓋率</h3><div class="big">%s</div><p class="muted">容器未量測，不合併分母。</p></article></div><section class="section"><h2>分環境查看</h2><div class="envs">`, status, n.Totals.AssertionsPassed, n.Totals.AssertionsExecuted, n.Totals.SuitesExecuted, n.Totals.AssertionsFailed, html.EscapeString(coverage))
+	fmt.Fprintf(&body, `<div class="grid"><article class="card"><h3>測試狀態</h3><div class="big">%s</div><p class="muted">靜態、單元及隔離整合測試</p></article><article class="card"><h3>原生檢查項目（斷言）</h3><div class="big">%d / %d</div><p class="muted">%d 組測試 · 失敗 %d</p></article><article class="card"><h3>原生整體覆蓋率</h3><div class="big">%s</div><p class="muted">%s；容器未量測，不合併分母。</p></article></div><section class="section"><h2>分環境查看</h2><div class="envs">`, status, n.Totals.AssertionsPassed, n.Totals.AssertionsExecuted, n.Totals.SuitesExecuted, n.Totals.AssertionsFailed, html.EscapeString(coverageHeadline), html.EscapeString(coverageDetail))
 	var details strings.Builder
 	type detailRow struct {
 		label string
@@ -43,7 +45,7 @@ func overviewRootDocuments(version string, native, container map[string][]byte) 
 	}
 	var rows []detailRow
 	for i, r := range reports {
-		label, path, measure := "Windows 原生", "native", coverage
+		label, path, measure := "Windows 原生", "native", coverageRow
 		if i == 1 {
 			label, path, measure = "Windows 容器", "windows_container", "容器未量測"
 		}

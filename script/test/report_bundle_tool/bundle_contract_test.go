@@ -485,9 +485,17 @@ func TestReportBundleExportPreservesValidatedReports(t *testing.T) {
 		}
 		files[f.Name] = b.Bytes()
 	}
-	legacyPage := string(files["index.html"])
-	if !strings.Contains(legacyPage, "整體覆蓋率：100.0%（1/1 可執行行）") || strings.Contains(legacyPage, "PowerShell/C# runtime 覆蓋率") {
-		t.Fatalf("schema 1 A overview mislabels historical coverage: %s", legacyPage)
+	legacyPage, err := a.ParsePage(files["index.html"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"整體覆蓋率", "100.0%", "1/1 可執行行"} {
+		if !strings.Contains(legacyPage.Visible, want) {
+			t.Errorf("historical coverage missing visible %q", want)
+		}
+	}
+	if strings.Contains(legacyPage.Visible, "PowerShell/C# runtime 覆蓋率") {
+		t.Fatal("schema 1 A overview mislabels historical coverage")
 	}
 	for _, entry := range []struct {
 		prefix string
@@ -888,7 +896,11 @@ func TestRuntimeReleaseReportDoesNotRequireGoCoverage(t *testing.T) {
 			if e != nil {
 				t.Fatal(e)
 			}
-			runtimePageFound = strings.Contains(string(data), "PowerShell/C# runtime 覆蓋率：100.0%（1/1 可執行行）")
+			page, e := a.ParsePage(data)
+			if e != nil {
+				t.Fatal(e)
+			}
+			runtimePageFound = strings.Contains(page.Visible, "PowerShell/C# runtime 覆蓋率") && strings.Contains(page.Visible, "100.0%") && strings.Contains(page.Visible, "1/1 可執行行")
 		}
 		if strings.HasPrefix(f.Name, "native/go_coverage.") {
 			t.Errorf("runtime bundle includes Go coverage: %s", f.Name)
