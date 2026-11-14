@@ -55,7 +55,7 @@ if($MainSnapshotPath -and (Test-Path -LiteralPath $MainSnapshotPath)){
  $hasGo=$null -ne $main.PSObject.Properties['GoCoverage']
  if($RequireGoCoverage -and -not $hasGo){throw 'main 發布缺少 Go 覆蓋率。'}
  if($hasGo){Assert-GoCoverageProfile -Coverage $main.GoCoverage -Directory (Split-Path -Parent $MainSnapshotPath)}
- Write-SnapshotView $main (Join-Path $output 'main');$mainStatus='Available'
+ Write-SnapshotView $main (Join-Path $output 'main') -OverviewPresentation;$mainStatus='Available'
  if($hasRepo){foreach($name in @('repo_coverage.json','coverage_inventory.json','coverage.xml')){Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $MainSnapshotPath) $name) -Destination (Join-Path $output ('main/'+$name))}}
  if($hasGo){Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $MainSnapshotPath) 'go_coverage.out') -Destination (Join-Path $output 'main/go_coverage.out')}
 }
