@@ -698,7 +698,7 @@ func TestFinishedManifestRejectsChangedAndUnknownFiles(t *testing.T) {
 }
 
 func TestManifestRejectsReplacementWithSimulatedReusedID(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "owned")
+	root := strings.ToUpper(filepath.Join(t.TempDir(), "owned"))
 	now := time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)
 	var out bytes.Buffer
 	for _, a := range [][]string{{"init", root}, {"create", root, "item"}} {
@@ -718,7 +718,14 @@ func TestManifestRejectsReplacementWithSimulatedReusedID(t *testing.T) {
 		t.Fatalf("manifest: %v %v", meta, e)
 	}
 	originalID := meta.Manifest[0].ID
+	canonicalRoot, _, e := normalizeTempRoot(root)
+	if e != nil {
+		t.Fatal(e)
+	}
+	canonicalChild := filepath.Join(canonicalRoot, "item", "child")
 	called := false
+	hookMatched := false
+	var replacementID string
 	var swapErr error
 	afterEnumerateHook = func() {
 		if called {
@@ -731,7 +738,9 @@ func TestManifestRejectsReplacementWithSimulatedReusedID(t *testing.T) {
 		}
 	}
 	identityTestHook = func(path, actual string) string {
-		if path == child {
+		if path == canonicalChild {
+			hookMatched = true
+			replacementID = actual
 			return originalID
 		}
 		return actual
@@ -740,6 +749,9 @@ func TestManifestRejectsReplacementWithSimulatedReusedID(t *testing.T) {
 	err := run([]string{"clean", root, "item", "--delete"}, &out, now)
 	if !called || swapErr != nil {
 		t.Fatalf("replacement failed: %v %v", called, swapErr)
+	}
+	if !hookMatched || replacementID == "" || replacementID == originalID {
+		t.Fatalf("replacement identity was not simulated: matched=%v changed=%v", hookMatched, replacementID != "" && replacementID != originalID)
 	}
 	if err == nil || !strings.Contains(err.Error(), "manifest entry changed") {
 		t.Fatalf("expected manifest content rejection with simulated reused ID: %v", err)
