@@ -762,6 +762,9 @@ func run() error {
 	if len(os.Args) < 2 {
 		return errors.New("expected export or verify command")
 	}
+	if os.Args[1] == "validate-main-pair" {
+		return validateMainPairCommand(os.Args[2:])
+	}
 	if os.Args[1] == "verify" {
 		return verify(os.Args[2:])
 	}

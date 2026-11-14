@@ -39,6 +39,8 @@ func TestMainPairRejectsWrongEnvironmentAndSource(t *testing.T) {
 		"source":      func() { n["Commit"] = strings.Repeat("b", 40) },
 		"run":         func() { n["RunUrl"] = "https://github.com/example/windows_setup/actions/runs/999" },
 		"environment": func() { n["Environment"] = "Windows synthetic native" },
+		"failed":      func() { n["Success"] = false },
+		"not-run":     func() { totals := n["Totals"].(map[string]any); totals["UnexecutedSuites"] = float64(1) },
 	} {
 		original := append([]byte(nil), container["summary.json"]...)
 		alter()
