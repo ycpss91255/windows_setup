@@ -524,8 +524,10 @@ jobs:
           WINDOWS_SETUP_COVERAGE_TOOL: ${{ runner.temp }}/repo_coverage_tool.exe
           WINDOWS_SETUP_REPORT_BUNDLE_TOOL: ${{ runner.temp }}/report_bundle_tool.exe
         run: |
-          go build -o $env:WINDOWS_SETUP_COVERAGE_TOOL ./script/test/repo_coverage_tool
-          go build -o $env:WINDOWS_SETUP_REPORT_BUNDLE_TOOL ./script/test/report_bundle_tool
+          . .\script\test\ci_tasks.ps1
+          Invoke-CINative -File go.exe -Arguments @('build','-o',$env:WINDOWS_SETUP_COVERAGE_TOOL,'./script/test/repo_coverage_tool')
+          Invoke-CINative -File go.exe -Arguments @('build','-o',$env:WINDOWS_SETUP_REPORT_BUNDLE_TOOL,'./script/test/report_bundle_tool')
+          Invoke-CINative -File go.exe -Arguments @('build','-o',(Join-Path $env:RUNNER_TEMP 'artifact_download.exe'),'./script/test/artifact_download')
       - name: 核對版本品質附件並本地產生索引
         shell: powershell
         env:
@@ -533,6 +535,7 @@ jobs:
           WINDOWS_SETUP_REPORT_BUNDLE_TOOL: ${{ runner.temp }}/report_bundle_tool.exe
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          WINDOWS_SETUP_ARTIFACT_DOWNLOAD_TOOL: ${{ runner.temp }}/artifact_download.exe
           EVENT_REF: ${{ github.ref }}
           EVENT_NAME: ${{ github.event_name }}
           CURRENT_RUN: ${{ github.run_id }}
