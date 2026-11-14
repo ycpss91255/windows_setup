@@ -38,6 +38,7 @@ func overviewRootDocuments(version string, native, container map[string][]byte) 
 	var details strings.Builder
 	type detailRow struct {
 		label string
+		path  string
 		check a.Check
 	}
 	var rows []detailRow
@@ -59,7 +60,7 @@ func overviewRootDocuments(version string, native, container map[string][]byte) 
 		}
 		fmt.Fprintf(&body, `<article class="env"><span class="%s">%s</span><h3>%s</h3><div class="row"><span>測試組數</span><strong>%d 組測試</strong></div><div class="row"><span>檢查項目（斷言）</span><strong>%d / %d · 失敗 %d</strong></div><div class="row"><span>覆蓋率</span><strong>%s</strong></div><p class="muted">%s</p><p><a href="%s/index.html">查看完整報表與證據</a></p><p><a href="%s/summary.json">JSON</a> · <a href="%s/junit.xml">JUnit</a> · <a href="%s/summary.md">文字摘要</a></p>%s</article>`, class, state, label, r.Totals.SuitesExecuted, r.Totals.AssertionsPassed, r.Totals.AssertionsExecuted, r.Totals.AssertionsFailed, html.EscapeString(measure), html.EscapeString(r.Environment), path, path, path, path, coverageLinks)
 		for _, check := range r.Checks {
-			rows = append(rows, detailRow{label, check})
+			rows = append(rows, detailRow{label, path, check})
 		}
 	}
 	rank := func(c a.Check) int {
@@ -71,26 +72,81 @@ func overviewRootDocuments(version string, native, container map[string][]byte) 
 		}
 		return 2
 	}
-	sort.SliceStable(rows, func(i, j int) bool { return rank(rows[i].check) < rank(rows[j].check) })
+	type domainGroup struct {
+		name string
+		rows []detailRow
+		rank int
+	}
+	groups := []domainGroup{}
+	indices := map[string]int{}
 	for _, row := range rows {
-		check := row.check
-		state := "通過"
-		if check.Status == "Failed" {
-			state = "失敗"
-		} else if check.Status == "NotRun" {
-			state = "未執行"
+		name := reportDomain(row.check.Name)
+		i, ok := indices[name]
+		if !ok {
+			i = len(groups)
+			indices[name] = i
+			groups = append(groups, domainGroup{name: name, rank: 2})
 		}
-		fmt.Fprintf(&details, "<details><summary>%s · %s · %s · %s</summary><ul>", row.label, html.EscapeString(check.Layer), html.EscapeString(check.Name), state)
-		for _, item := range check.Assertions {
-			state := "未執行"
-			if check.Executed && item.Passed != nil {
-				if *item.Passed {
-					state = "通過"
-				} else {
-					state = "失敗"
+		groups[i].rows = append(groups[i].rows, row)
+		if r := rank(row.check); r < groups[i].rank {
+			groups[i].rank = r
+		}
+	}
+	order := map[string]int{"硬體與驅動包": 0, "帳號與權限": 1, "版本與來源準備": 2, "Windows 設定與清理": 3, "網路與 SSH": 4, "測試與交付工具": 5, "其他檢查": 6}
+	sort.SliceStable(groups, func(i, j int) bool {
+		if groups[i].rank != groups[j].rank {
+			return groups[i].rank < groups[j].rank
+		}
+		return order[groups[i].name] < order[groups[j].name]
+	})
+	for _, group := range groups {
+		nativeCount, containerCount, nativeFailed, containerFailed, nativeNotRun, containerNotRun := 0, 0, 0, 0, 0, 0
+		for _, row := range group.rows {
+			if row.path == "native" {
+				nativeCount++
+				if row.check.Status == "Failed" {
+					nativeFailed++
+				}
+				if row.check.Status == "NotRun" {
+					nativeNotRun++
+				}
+			} else {
+				containerCount++
+				if row.check.Status == "Failed" {
+					containerFailed++
+				}
+				if row.check.Status == "NotRun" {
+					containerNotRun++
 				}
 			}
-			fmt.Fprintf(&details, "<li>%s · %s</li>", html.EscapeString(item.Name), state)
+		}
+		fmt.Fprintf(&details, "<details><summary>%s · 原生 %d 組（失敗 %d、未執行 %d） · 容器 %d 組（失敗 %d、未執行 %d）</summary><p>此領域的自動檢查與原始識別：</p><ul>", html.EscapeString(group.name), nativeCount, nativeFailed, nativeNotRun, containerCount, containerFailed, containerNotRun)
+		sort.SliceStable(group.rows, func(i, j int) bool { return rank(group.rows[i].check) < rank(group.rows[j].check) })
+		for _, row := range group.rows {
+			check := row.check
+			state := "通過"
+			if check.Status == "Failed" {
+				state = "失敗"
+			} else if check.Status == "NotRun" {
+				state = "未執行"
+			}
+			fmt.Fprintf(&details, "<li>%s · %s · %s · %s", row.label, html.EscapeString(check.Layer), html.EscapeString(check.Name), state)
+			if len(check.Assertions) > 0 {
+				details.WriteString("<ul>")
+				for _, item := range check.Assertions {
+					state := "未執行"
+					if check.Executed && item.Passed != nil {
+						if *item.Passed {
+							state = "通過"
+						} else {
+							state = "失敗"
+						}
+					}
+					fmt.Fprintf(&details, "<li>%s · %s</li>", html.EscapeString(item.Name), state)
+				}
+				details.WriteString("</ul>")
+			}
+			details.WriteString("</li>")
 		}
 		details.WriteString(`</ul></details>`)
 	}

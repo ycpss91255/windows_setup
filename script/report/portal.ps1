@@ -1,4 +1,16 @@
 ﻿#Requires -Version 5.1
+function Get-ReportDomain {
+ param([string]$Name)
+ $tokens=@([regex]::Split($Name.ToLowerInvariant(),'[._-]+')|Where-Object {$_})
+ $adjacent={param($a,$b) for($i=0;$i -lt $tokens.Count-1;$i++){if($tokens[$i] -ceq $a -and $tokens[$i+1] -ceq $b){return $true}};return $false}
+ if(@($tokens|Where-Object {$_ -in @('hardware','driver','drivers')}).Count){return '硬體與驅動包'}
+ if(@($tokens|Where-Object {$_ -in @('account','accounts','uac','permission','permissions')}).Count){return '帳號與權限'}
+ if((& $adjacent 'source' 'release') -or @($tokens|Where-Object {$_ -in @('version','versions','release')}).Count){return '版本與來源準備'}
+ if((& $adjacent 'one' 'drive') -or @($tokens|Where-Object {$_ -in @('input','taskbar','start','desktop','theme','display','power','privacy','debloat','cleanup')}).Count){return 'Windows 設定與清理'}
+ if(@($tokens|Where-Object {$_ -in @('network','networking','ssh','mdns','hosts','firewall')}).Count){return '網路與 SSH'}
+ if(@($tokens|Where-Object {$_ -in @('ci','coverage','container','containers','docker','report','reports','portal')}).Count){return '測試與交付工具'}
+ return '其他檢查'
+}
 function New-PairedOverviewHtml {
  param($Native,$Container,[string]$Title='主線測試結果')
  $encode={param($v) [Net.WebUtility]::HtmlEncode([string]$v)}
@@ -16,11 +28,20 @@ function New-PairedOverviewHtml {
   $body+='<article class="env"><span class="'+$class+'">'+$state+'</span><h3>'+(& $encode $pair.Label)+'</h3><div class="row"><span>測試組數</span><strong>'+$r.Totals.SuitesExecuted+' 組測試</strong></div><div class="row"><span>檢查項目（斷言）</span><strong>'+$r.Totals.AssertionsPassed+' / '+$r.Totals.AssertionsExecuted+' · 失敗 '+$r.Totals.AssertionsFailed+'</strong></div><div class="row"><span>覆蓋率</span><strong>'+(& $encode $measure)+'</strong></div><p class="muted">'+(& $encode $r.Environment)+'</p><p><a href="'+$pair.Path+'/index.html">查看完整報表與證據</a></p><p><a href="'+$pair.Path+'/summary.json">JSON</a> · <a href="'+$pair.Path+'/junit.xml">JUnit</a> · <a href="'+$pair.Path+'/summary.md">文字摘要</a></p>'+$extra+'</article>'
  }
  $body+='</div></section><section class="section"><h2>這次檢查了什麼</h2>'
- $rows=@(foreach($pair in $pairs){foreach($check in @($pair.Report.Checks)){[pscustomobject]@{Label=$pair.Label;Check=$check}}})
- foreach($row in @($rows|Sort-Object @{Expression={if($_.Check.Status -eq 'Failed'){0}elseif($_.Check.Status -eq 'NotRun'){1}else{2}}})){
-  $check=$row.Check;$state=if($check.Status -eq 'Failed'){'失敗'}elseif($check.Status -eq 'NotRun'){'未執行'}else{'通過'}
-  $body+='<details><summary>'+(& $encode ($row.Label+' · '+$check.Layer+' · '+$check.Name+' · '+$state))+'</summary><ul>'
-  foreach($assertion in @($check.Assertions)){$assertionState=if(-not $check.Executed){'未執行'}elseif($assertion.Passed){'通過'}else{'失敗'};$body+='<li>'+(& $encode ($assertion.Name+' · '+$assertionState))+'</li>'}
+ $rows=@(foreach($pair in $pairs){foreach($check in @($pair.Report.Checks)){[pscustomobject]@{Label=$pair.Label;Path=$pair.Path;Check=$check;Domain=(Get-ReportDomain $check.Name)}}})
+ $order=@{'硬體與驅動包'=0;'帳號與權限'=1;'版本與來源準備'=2;'Windows 設定與清理'=3;'網路與 SSH'=4;'測試與交付工具'=5;'其他檢查'=6}
+ $groups=@($rows|Group-Object Domain|Sort-Object @{Expression={if(@($_.Group|Where-Object {$_.Check.Status -eq 'Failed'}).Count){0}elseif(@($_.Group|Where-Object {$_.Check.Status -eq 'NotRun'}).Count){1}else{2}}},@{Expression={$order[$_.Name]}})
+ foreach($group in $groups){
+  $nativeRows=@($group.Group|Where-Object Path -eq 'native');$containerRows=@($group.Group|Where-Object Path -eq 'windows_container')
+  $nf=@($nativeRows|Where-Object {$_.Check.Status -eq 'Failed'}).Count;$nn=@($nativeRows|Where-Object {$_.Check.Status -eq 'NotRun'}).Count
+  $cf=@($containerRows|Where-Object {$_.Check.Status -eq 'Failed'}).Count;$cn=@($containerRows|Where-Object {$_.Check.Status -eq 'NotRun'}).Count
+  $body+='<details><summary>'+(& $encode $group.Name)+' · 原生 '+$nativeRows.Count+' 組（失敗 '+$nf+'、未執行 '+$nn+'） · 容器 '+$containerRows.Count+' 組（失敗 '+$cf+'、未執行 '+$cn+'）</summary><p>此領域的自動檢查與原始識別：</p><ul>'
+  foreach($row in @($group.Group|Sort-Object @{Expression={if($_.Check.Status -eq 'Failed'){0}elseif($_.Check.Status -eq 'NotRun'){1}else{2}}})){
+   $check=$row.Check;$state=if($check.Status -eq 'Failed'){'失敗'}elseif($check.Status -eq 'NotRun'){'未執行'}else{'通過'}
+   $body+='<li>'+(& $encode ($row.Label+' · '+$check.Layer+' · '+$check.Name+' · '+$state))
+   if(@($check.Assertions).Count){$body+='<ul>';foreach($assertion in @($check.Assertions)){$assertionState=if(-not $check.Executed){'未執行'}elseif($assertion.Passed){'通過'}else{'失敗'};$body+='<li>'+(& $encode ($assertion.Name+' · '+$assertionState))+'</li>'};$body+='</ul>'}
+   $body+='</li>'
+  }
   $body+='</ul></details>'
  }
  $body+='</section>'
