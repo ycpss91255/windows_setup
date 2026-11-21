@@ -160,31 +160,31 @@ public static class ManagedNativeTests {
  }
  static void HotkeyCases(){
   var log=new List<string>();int unregistered=0,messages=0,launched=0;
-  var api=new NucTerminalHotkey.NativeApi();
+  var api=new WindowsSetupTerminalHotkey.NativeApi();
   api.Register=delegate(IntPtr window,int id,uint modifiers,uint key){Assert(window==IntPtr.Zero && id==1 && modifiers==0x4003 && key==0x54,"hotkey registers Ctrl+Alt+T with no-repeat modifier");return false;};
   api.Unregister=delegate(IntPtr window,int id){Assert(window==IntPtr.Zero && id==1,"hotkey releases its own registration");unregistered++;return true;};
   api.Error=delegate{return 37;};api.PID=delegate{return 1234;};api.Time=delegate{return "fixture-time";};
   api.Write=delegate(string path,string text){Assert(path=="fixture.log","hotkey writes only requested status log");log.Clear();log.Add(text);};
   api.Append=delegate(string path,string text){Assert(path=="fixture.log","hotkey appends only requested status log");log.Add(text);};
-  api.Next=delegate(out NucTerminalHotkey.MSG message,IntPtr window,uint min,uint max){message=new NucTerminalHotkey.MSG();messages++;return 0;};
+  api.Next=delegate(out WindowsSetupTerminalHotkey.MSG message,IntPtr window,uint min,uint max){message=new WindowsSetupTerminalHotkey.MSG();messages++;return 0;};
   api.Launch=delegate(string terminal,string home){Assert(terminal=="terminal fixture.exe" && home=="home with spaces","hotkey forwards dynamic terminal and user home");launched++;};
-  NucTerminalHotkey.Run("terminal fixture.exe","fixture.log","home with spaces",api);
+  WindowsSetupTerminalHotkey.Run("terminal fixture.exe","fixture.log","home with spaces",api);
   Assert(log.Count==1 && log[0]=="FAILED: 37" && messages==0 && unregistered==0,"failed registration neither enters loop nor unregisters someone else's hotkey");
   api.Register=delegate(IntPtr window,int id,uint modifiers,uint key){return true;};
-  api.Next=delegate(out NucTerminalHotkey.MSG message,IntPtr window,uint min,uint max){message=new NucTerminalHotkey.MSG();int number=messages++;if(number==0){message.message=0x100;return 1;}if(number==1){message.message=0x312;message.wParam=(UIntPtr)1;return 1;}return 0;};
-  NucTerminalHotkey.Run("terminal fixture.exe","fixture.log","home with spaces",api);
+  api.Next=delegate(out WindowsSetupTerminalHotkey.MSG message,IntPtr window,uint min,uint max){message=new WindowsSetupTerminalHotkey.MSG();int number=messages++;if(number==0){message.message=0x100;return 1;}if(number==1){message.message=0x312;message.wParam=(UIntPtr)1;return 1;}return 0;};
+  WindowsSetupTerminalHotkey.Run("terminal fixture.exe","fixture.log","home with spaces",api);
   Assert(launched==1 && unregistered==1 && log[0].Contains("REGISTERED: PID=1234 fixture-time") && log[1].Contains("LAUNCHED: fixture-time"),"hotkey ignores unrelated messages and launches terminal only for its registration");
-  messages=0;api.Next=delegate(out NucTerminalHotkey.MSG message,IntPtr window,uint min,uint max){message=new NucTerminalHotkey.MSG{message=0x312,wParam=(UIntPtr)1};return messages++==0?1:0;};
+  messages=0;api.Next=delegate(out WindowsSetupTerminalHotkey.MSG message,IntPtr window,uint min,uint max){message=new WindowsSetupTerminalHotkey.MSG{message=0x312,wParam=(UIntPtr)1};return messages++==0?1:0;};
   api.Launch=delegate(string terminal,string home){throw new InvalidOperationException("launch fixture failure");};
-  NucTerminalHotkey.Run("terminal fixture.exe","fixture.log","home with spaces",api);
+  WindowsSetupTerminalHotkey.Run("terminal fixture.exe","fixture.log","home with spaces",api);
   Assert(log[1].Contains("LAUNCH FAILED: launch fixture failure") && unregistered==2,"terminal launch failure is logged and registration is released");
-  api.Next=delegate(out NucTerminalHotkey.MSG message,IntPtr window,uint min,uint max){message=new NucTerminalHotkey.MSG();return -1;};
-  NucTerminalHotkey.Run("terminal fixture.exe","fixture.log","home with spaces",api);
+  api.Next=delegate(out WindowsSetupTerminalHotkey.MSG message,IntPtr window,uint min,uint max){message=new WindowsSetupTerminalHotkey.MSG();return -1;};
+  WindowsSetupTerminalHotkey.Run("terminal fixture.exe","fixture.log","home with spaces",api);
   Assert(log[1].Contains("MESSAGE LOOP FAILED: 37") && unregistered==3,"message-loop native error cannot leave a misleading registered status");
   api.Write=delegate(string path,string text){throw new InvalidOperationException("log fixture failure");};
-  Throws(delegate{NucTerminalHotkey.Run("terminal fixture.exe","fixture.log","home with spaces",api);},"startup log failure propagates");
+  Throws(delegate{WindowsSetupTerminalHotkey.Run("terminal fixture.exe","fixture.log","home with spaces",api);},"startup log failure propagates");
   Assert(unregistered==4,"startup log failure still unregisters the acquired hotkey");
-  var start=NucTerminalHotkey.CreateStartInfo("terminal fixture.exe","home with spaces");Assert(start.UseShellExecute && start.FileName=="terminal fixture.exe" && start.WorkingDirectory=="home with spaces","production launch options preserve dynamic paths without starting a process");
+  var start=WindowsSetupTerminalHotkey.CreateStartInfo("terminal fixture.exe","home with spaces");Assert(start.UseShellExecute && start.FileName=="terminal fixture.exe" && start.WorkingDirectory=="home with spaces","production launch options preserve dynamic paths without starting a process");
  }
  static void DisplayCases(){
   var api=new NUC8Display.Display.NativeApi();int changes=0,freed=0,gets=0,sets=0,dpiReads=0,status=0;bool missing=false,afterUnavailable=false,unchanged=false;
@@ -258,7 +258,7 @@ public static class ManagedNativeTests {
   Assert(typeof(NUC8Icons.Desktop).GetMethod("Capture")!=null,"desktop capture API is available");
   Assert(typeof(NUC8Theme).GetMethod("TaskbarColor")!=null,"theme API is available");
   Assert(typeof(NucExplorerLiveV2).GetMethod("Options")!=null,"explorer API is available");
-  Assert(typeof(NucTerminalHotkey).GetMethod("Run")!=null,"hotkey API is available");
+  Assert(typeof(WindowsSetupTerminalHotkey).GetMethod("Run")!=null,"hotkey API is available");
   Assert(typeof(WindowsSetup.OobeWimReader).GetMethod("Extract")!=null,"WIM read API is available");
   var method=typeof(NUC8Display.Display).GetMethod("NewMode",BindingFlags.NonPublic|BindingFlags.Static);
   var mode=(NUC8Display.Mode)method.Invoke(null,new object[0]);

@@ -80,7 +80,7 @@ function New-SetupTerminalMutex {New-Object Threading.Mutex($false,'Local\NUC8Te
 function Invoke-SetupTerminalNative {
  param([string]$ModuleRoot,[string]$Terminal,[string]$LogPath,[string]$UserHome)
  Add-Type -Path (Join-Path $ModuleRoot 'native/terminal_hotkey.cs')
- [NucTerminalHotkey]::Run($Terminal,$LogPath,$UserHome)
+ [WindowsSetupTerminalHotkey]::Run($Terminal,$LogPath,$UserHome)
 }
 function Invoke-SetupTerminalListener {
  param([Parameter(Mandatory=$true)][string]$ModuleRoot)

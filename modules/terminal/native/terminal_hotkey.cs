@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.IO;
-public static class NucTerminalHotkey {
+public static class WindowsSetupTerminalHotkey {
  [StructLayout(LayoutKind.Sequential)]internal struct POINT{public int x,y;}
  [StructLayout(LayoutKind.Sequential)]internal struct MSG{public IntPtr hwnd;public uint message;public UIntPtr wParam;public IntPtr lParam;public uint time;public POINT pt;public uint lPrivate;}
  [DllImport("user32.dll",SetLastError=true)]static extern bool RegisterHotKey(IntPtr hwnd,int id,uint modifiers,uint key);
