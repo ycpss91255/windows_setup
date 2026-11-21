@@ -732,6 +732,8 @@ CI 的 Docker 工作總預算為 125 分鐘：就緒檢查 3 分鐘、映像建�
 
 維護工具以 Go 為主要實作語言；Windows 原生設定與 PowerShell 5.1 測試保留 PowerShell，一般使用者執行設定不需要 Go。根目錄 `go.mod` 僅管理 `script/test` 工具與 `test/go` 案例，沒有改變交付程式的依賴方向。HTML5 解析使用固定版本的官方 `golang.org/x/net/html`，其餘驗收使用標準庫；必要上游原碼及授權保存在 `vendor`，離線容器不下載模組。
 
+維護者可使用 `go run ./script/test/actions_timing_tool --input <JSON> --repository owner/repo --run-id <數字> --attempt <數字> --head-sha <API-head-SHA>` 離線檢查 Actions 工作時間。輸入 JSON 包含 `run`（原 run API 物件）及 `pages` 陣列；每頁為 `{ "page_number": 1, "per_page": 100, "total_count": <API總數>, "jobs": [<API job 物件>] }`，頁碼從 1 連續，所有頁數與工作數必須符合 total_count。工具核對呼叫者另外指定的身分與資料內 run、job、attempt、可用的 job head，並拒絕重複與不合理時間；這只能檢查輸入內部一致性，不認證資料來自 GitHub，也不能獨立證明呼叫者提供了真實完整分頁。PR 的 API head SHA 與實際 checkout merge SHA 可能不同；可選 `--checkout-sha` 僅原樣標示為 caller 未驗證資料，不要求兩者相等。輸出 job 的 `pending_ms` 是建立到開始的區間，可能包含依賴等待，不能當成純 runner 排隊；step 不估排隊，缺時間或未執行為 null。關鍵路徑仍須另核對工作依賴及來源，不能直接相加。
+
 直接執行 Go 測試時，在完整 checkout 根目錄使用 `go test -mod=vendor -count=1 ./...`，並將 `WINDOWS_SETUP_ARTIFACT_DIR` 指向 PS5.1 產生的 public 報告、`WINDOWS_SETUP_PORTAL_FIXTURE_DIR` 指向 `script/test/create_portal_fixture.ps1` 產生的 portal 目錄。兩者缺少即失敗，不以跳過掩蓋缺證據；上述 Docker `test` 入口會自動準備這些輸入。Go 單元及整合測試包含原有 21 項驗收契約與新增解析／命令列邊界案例，結果獨立於 PS5.1 報表數量。
 
 容器映像提供 Windows PowerShell 5.1、固定版本且核對雜湊的 MinGit 與 Go 1.27.3。一般本機未設定 GitHub 執行來源時，PS5.1 仍測試目前真實 checkout，保留其 Clean／Dirty 狀態；Go 需求合約使用另外明確標示 Synthetic 的暫存樣本，不改寫或冒充本機正式報告。本機模式不產生已通過 80% 的 CI 覆蓋率證據。CI 必須以本次真實報告驗收，正式發布要求 PowerShell/C# runtime 量測完整並以原始覆蓋行數通過精確 80% 門檻；GitHub 提交、儲存庫、執行 ID、ref 類型與 ref 名稱這五項只要部分存在或格式錯誤就停止，不會降級成合成證據通過。
