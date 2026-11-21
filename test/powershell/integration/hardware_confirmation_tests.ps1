@@ -11,14 +11,14 @@ $confirmation=Get-SetupSavedHardwareConfirmation -ResultPath $resultPath -UserSI
 Assert ($confirmation.ConfirmedBoard -eq 'NUC8i7HVB') '續跑可恢復本機同帳號明確確認'
 Assert ((Get-SetupSavedHardwareConfirmation -ResultPath $resultPath -UserSID different).Count -eq 0) '續跑不沿用其他帳號確認'
 Assert ((Get-SetupSavedHardwareConfirmation -ResultPath $resultPath -UserSID fixture_sid -Computer different).Count -eq 0) '續跑不沿用其他電腦確認'
-foreach($file in @('core/configure_nuc.ps1','core/run_module.ps1','modules/drivers/install_drivers.ps1')){
+foreach($file in @('core/configure_setup.ps1','core/run_module.ps1','modules/drivers/install_drivers.ps1')){
  $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root $file),[ref]$tokens,[ref]$errors)
  $elevation=$ast.Find({param($a) $a -is [Management.Automation.Language.IfStatementAst] -and $a.Extent.Text -match 'Start-Process powershell.exe -Verb RunAs|Start-SetupEntryElevated'},$true)
  $fakeEntry=Join-Path $fixture 'target.ps1'
  [IO.File]::WriteAllText($fakeEntry,'param($Module,$ExpectedUserSID,$DriverPackagePath,$ConfirmedBoard,$ConfirmationComputer,[switch]$NonInteractive);[pscustomobject]@{Board=$ConfirmedBoard;Computer=$ConfirmationComputer}',[Text.UTF8Encoding]::new($true))
  $capturedState=@{Args=''}
  function Start-Process {param($FilePath,$Verb,$ArgumentList);$capturedState.Args=$ArgumentList}
- if($file -eq 'core/configure_nuc.ps1'){. (Join-Path $root 'core/entry_os_boundary.ps1')}
+ if($file -eq 'core/configure_setup.ps1'){. (Join-Path $root 'core/entry_os_boundary.ps1')}
  $ConfirmedBoard='NUC8i7HVB';$ConfirmationComputer=$env:COMPUTERNAME;$DriverPackagePath='';$currentSID='fixture';$sid=$currentSID;$Module='Install-Drivers';$VerifyOnly=$false;$SyncOnly=$false;$Mode='All'
  $body=$elevation.Clauses[0].Item2.Statements|Where-Object {$_ -isnot [Management.Automation.Language.ExitStatementAst] -and $_ -isnot [Management.Automation.Language.ReturnStatementAst]}|ForEach-Object {$_.Extent.Text}
  & ([scriptblock]::Create(($body -join "`n").Replace('$PSCommandPath','$fakeEntry')))
@@ -30,13 +30,13 @@ $forwardStub=Join-Path $fixture 'forward.ps1'
 [IO.File]::WriteAllText($forwardStub,'param($DriverPackagePath,$ConfirmedBoard,$ConfirmationComputer,[switch]$NonInteractive);[pscustomobject]@{Board=$ConfirmedBoard;Computer=$ConfirmationComputer;Path=$DriverPackagePath}',[Text.UTF8Encoding]::new($true))
 function Resolve-NucPath {param($Name);$forwardStub}
 $path=$forwardStub;$stage=@{File='install_drivers.ps1'};$file='install_drivers.ps1';$DriverPackagePath='dynamic_driver_path'
-foreach($relative in @('core/configure_nuc.ps1','core/run_module.ps1','core/verify_after_restart.ps1')){
+foreach($relative in @('core/configure_setup.ps1','core/run_module.ps1','core/verify_after_restart.ps1')){
  $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root $relative),[ref]$tokens,[ref]$errors)
  if($relative -eq 'core/run_module.ps1'){$bound=@{DriverPackagePath=$DriverPackagePath};$setup=$ast.FindAll({param($a) ($a -is [Management.Automation.Language.AssignmentStatementAst] -and $a.Left.Extent.Text -eq '$driverArguments') -or ($a -is [Management.Automation.Language.IfStatementAst] -and $a.Extent.Text -match 'driverArguments.DriverPackagePath')},$true);foreach($statement in $setup){. ([scriptblock]::Create($statement.Extent.Text.Replace('$PSBoundParameters','$bound')))}}
- if($relative -eq 'core/configure_nuc.ps1'){$combined=[IO.File]::ReadAllText((Join-Path $root $relative))+[IO.File]::ReadAllText((Join-Path $root 'core/configuration_library.ps1'));$ast=[Management.Automation.Language.Parser]::ParseInput($combined,[ref]$tokens,[ref]$errors)}
+ if($relative -eq 'core/configure_setup.ps1'){$combined=[IO.File]::ReadAllText((Join-Path $root $relative))+[IO.File]::ReadAllText((Join-Path $root 'core/configuration_library.ps1'));$ast=[Management.Automation.Language.Parser]::ParseInput($combined,[ref]$tokens,[ref]$errors)}
  if($relative -eq 'core/verify_after_restart.ps1'){$combined=[IO.File]::ReadAllText((Join-Path $root $relative))+[IO.File]::ReadAllText((Join-Path $root 'core/after_restart_library.ps1'));$ast=[Management.Automation.Language.Parser]::ParseInput($combined,[ref]$tokens,[ref]$errors)}
  $calls=@($ast.FindAll({param($a) $a -is [Management.Automation.Language.CommandAst] -and $a.InvocationOperator -eq 'Ampersand' -and ($a.Extent.Text -match '-DriverPackagePath|@driverArguments')},$true))
- Assert ($calls.Count -eq $(if($relative -eq 'core/verify_after_restart.ps1'){4}elseif($relative -eq 'core/configure_nuc.ps1'){2}else{1})) ('完整下游調用數：'+$relative)
+ Assert ($calls.Count -eq $(if($relative -eq 'core/verify_after_restart.ps1'){4}elseif($relative -eq 'core/configure_setup.ps1'){2}else{1})) ('完整下游調用數：'+$relative)
  foreach($call in $calls){$result=& ([scriptblock]::Create($call.Extent.Text));Assert ($result.Board -eq 'NUC8i7HVB' -and $result.Computer -eq $env:COMPUTERNAME -and $result.Path -eq $DriverPackagePath) ('真下游呼叫傳遞型號與機器身分：'+$relative)}
 }
 # Rehydrate and evaluate the real verification profile assignments.

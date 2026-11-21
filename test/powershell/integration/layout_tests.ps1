@@ -98,13 +98,13 @@ $manifest=@(foreach($name in @('Chipset.zip','SerialIO.zip','UCM.zip','GFX-Radeo
 $manifest|ConvertTo-Json|Set-Content (Join-Path $driverFixture 'manifest.json') -Encoding UTF8
 @{SchemaVersion=1;HardwareProfile='NUC8';Architecture='x64';SupportedBoards=@('NUC8i7HVB','NUC8i7HNB')}|ConvertTo-Json|Set-Content (Join-Path $driverFixture 'package.json') -Encoding UTF8
 Assert (Test-Path -LiteralPath (Join-Path $fixture 'hardware.ps1')) 'routing fixture includes actual hardware selection dependency'
-foreach($entry in @('configure_nuc.ps1','verify_after_restart.ps1','verify_only.ps1')){[IO.File]::WriteAllText((Join-Path $fixture $entry),"param(`$DriverPackagePath,`$ConfirmedBoard,`$ConfirmationComputer);Write-Output '$entry'")}
-Assert ((& (Join-Path $fixture 'start_windows.ps1') -NonInteractive) -eq 'configure_nuc.ps1') 'Windows default dispatches setup'
+foreach($entry in @('configure_setup.ps1','verify_after_restart.ps1','verify_only.ps1')){[IO.File]::WriteAllText((Join-Path $fixture $entry),"param(`$DriverPackagePath,`$ConfirmedBoard,`$ConfirmationComputer);Write-Output '$entry'")}
+Assert ((& (Join-Path $fixture 'start_windows.ps1') -NonInteractive) -eq 'configure_setup.ps1') 'Windows default dispatches setup'
 Assert ((& (Join-Path $fixture 'start_windows.ps1') -AfterRestart) -eq 'verify_after_restart.ps1') 'Windows AfterRestart dispatches continuation'
 Assert ((& (Join-Path $fixture 'start_windows.ps1') -VerifyOnly) -eq 'verify_only.ps1') 'Windows VerifyOnly dispatches read-only check'
 $rejected=$false;try{& (Join-Path $fixture 'start_windows.ps1') -AfterRestart -VerifyOnly}catch{$rejected=$true}
 Assert $rejected 'mutually exclusive dispatcher options rejected'
-[IO.File]::WriteAllText((Join-Path $fixture 'configure_nuc.ps1'),'param([string]$DriverPackagePath,$ConfirmedBoard,$ConfirmationComputer) $DriverPackagePath')
+[IO.File]::WriteAllText((Join-Path $fixture 'configure_setup.ps1'),'param([string]$DriverPackagePath,$ConfirmedBoard,$ConfirmationComputer) $DriverPackagePath')
 Push-Location $fixture
 try{$selected=& (Join-Path $fixture 'start_windows.ps1') -NonInteractive -DriverPackagePath '.\driver_pack'}finally{Pop-Location}
 Assert ($selected -eq (Join-Path $fixture 'driver_pack')) '主入口相對驅動路徑依 PowerShell 位置解析'

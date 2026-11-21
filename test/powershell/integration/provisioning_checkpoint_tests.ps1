@@ -41,7 +41,7 @@ function Read-InitProvisioningState {param($StatePath,$MachineGuid,$PackageHash)
 Assert (-not(Invoke-InitWindowsCheckpoint -StageRoot (Join-Path $env:TEMP 'fixture_checkpoint'))) 'Windows checkpoint is a no-op when no Init stage exists'
 $script:hasStage=$true
 Assert (Invoke-InitWindowsCheckpoint -StageRoot (Join-Path $env:TEMP 'fixture_checkpoint')) 'Windows entry validates existing Init account state without SSH'
-$configure=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\core\configure_nuc.ps1'))
+$configure=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\core\configure_setup.ps1'))
 $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($configure,[ref]$tokens,[ref]$errors)
 $hooks=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Invoke-InitWindowsCheckpoint'},$true))
 Assert ($hooks.Count -eq 1) 'Windows main flow invokes exactly one Init account checkpoint'

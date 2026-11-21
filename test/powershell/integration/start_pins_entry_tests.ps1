@@ -49,9 +49,9 @@ param($DriverPackagePath,$ConfirmedBoard,$ConfirmationComputer,[switch]$NonInter
 @{Path=$DriverPackagePath;Board=$ConfirmedBoard;Computer=$ConfirmationComputer;NonInteractive=$NonInteractive.IsPresent}|ConvertTo-Json -Compress|Set-Content -LiteralPath (Join-Path $PSScriptRoot 'result.json') -Encoding UTF8
 '@
 [IO.File]::WriteAllText((Join-Path $core 'hardware.ps1'),$hardware,[Text.UTF8Encoding]::new($true))
-[IO.File]::WriteAllText((Join-Path $core 'configure_nuc.ps1'),$configure,[Text.UTF8Encoding]::new($true))
+[IO.File]::WriteAllText((Join-Path $core 'configure_setup.ps1'),$configure,[Text.UTF8Encoding]::new($true))
 foreach($name in @('verify_only','verify_after_restart')){[IO.File]::WriteAllText((Join-Path $core ($name+'.ps1')),"[IO.File]::WriteAllText((Join-Path `$PSScriptRoot 'result.json'),'`"$name`"')",[Text.UTF8Encoding]::new($true))}
-$hashes=@{};foreach($name in @('start_windows.ps1','hardware.ps1','configure_nuc.ps1','verify_only.ps1','verify_after_restart.ps1')){$hashes[$name]=(Get-FileHash -LiteralPath (Join-Path $core $name) -Algorithm SHA256).Hash}
+$hashes=@{};foreach($name in @('start_windows.ps1','hardware.ps1','configure_setup.ps1','verify_only.ps1','verify_after_restart.ps1')){$hashes[$name]=(Get-FileHash -LiteralPath (Join-Path $core $name) -Algorithm SHA256).Hash}
 $wrapper=Join-Path $fixture 'wrapper.ps1'
 [IO.File]::WriteAllText($wrapper,@'
 param([string]$Config)

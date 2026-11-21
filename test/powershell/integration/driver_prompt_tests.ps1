@@ -6,7 +6,7 @@ $core=Join-Path $fixture 'windows_setup/core'
 New-Item -ItemType Directory -Path $core -Force|Out-Null
 Copy-Item (Join-Path $root 'core/start_windows.ps1'),(Join-Path $root 'core/hardware.ps1') -Destination $core
 Copy-Item -LiteralPath (Join-Path $root 'drivers') -Destination (Split-Path $core -Parent) -Recurse
-[IO.File]::WriteAllText((Join-Path $core 'configure_nuc.ps1'),'param($DriverPackagePath,$ConfirmedBoard,$ConfirmationComputer);$fixtureState.SelectedDriver=$DriverPackagePath',[Text.UTF8Encoding]::new($true))
+[IO.File]::WriteAllText((Join-Path $core 'configure_setup.ps1'),'param($DriverPackagePath,$ConfirmedBoard,$ConfirmationComputer);$fixtureState.SelectedDriver=$DriverPackagePath',[Text.UTF8Encoding]::new($true))
 $fixtureState=@{Board='';PromptCount=0;Answers=$null;SelectedDriver=''};$count=0
 function Assert([bool]$Condition,[string]$Message){Write-Host ('@@ASSERT@@'+(@{Name=$Message;Passed=$Condition}|ConvertTo-Json -Compress));if(-not $Condition){throw ('FAIL: '+$Message)};$script:count++}
 function Get-CimInstance {param($ClassName,$ErrorAction);[pscustomobject]@{Product=$fixtureState.Board}}
@@ -45,7 +45,7 @@ $fixtureState.Board='';$request=Select-SetupDriverRequest -PackageRoot (Split-Pa
 Assert ($request.DriverPackagePath -eq $payload) '非互動可傳明確受控確認與有效包，不需讀輸入'
 # The real entry must carry a noninteractive confirmation into configure.
 $fixtureState.Board=''
-[IO.File]::WriteAllText((Join-Path $core 'configure_nuc.ps1'),'param($DriverPackagePath,$ConfirmedBoard,$ConfirmationComputer);$fixtureState.Forwarded=@{Path=$DriverPackagePath;Board=$ConfirmedBoard;Computer=$ConfirmationComputer}',[Text.UTF8Encoding]::new($true))
+[IO.File]::WriteAllText((Join-Path $core 'configure_setup.ps1'),'param($DriverPackagePath,$ConfirmedBoard,$ConfirmationComputer);$fixtureState.Forwarded=@{Path=$DriverPackagePath;Board=$ConfirmedBoard;Computer=$ConfirmationComputer}',[Text.UTF8Encoding]::new($true))
 & (Join-Path $core 'start_windows.ps1') -NonInteractive -DriverPackagePath $payload -ConfirmedBoard NUC8i7HVB -ConfirmationComputer $env:COMPUTERNAME
 Assert ($fixtureState.Forwarded.Path -eq $payload -and $fixtureState.Forwarded.Board -eq 'NUC8i7HVB' -and $fixtureState.Forwarded.Computer -eq $env:COMPUTERNAME) '真windows入口把非互動確認送到configure'
 # Retry refreshes the hardware rather than retaining the original unknown result.

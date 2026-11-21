@@ -6,7 +6,7 @@ function Assert([bool]$Value,[string]$Name){Write-Host ('@@ASSERT@@'+(@{Name=$Na
 $fixture=Join-Path $env:TEMP ('driver_profile_resume_'+[guid]::NewGuid().ToString('N'));[void][IO.Directory]::CreateDirectory($fixture)
 $registry=Join-Path $fixture 'drivers';$profileDir=Join-Path $registry 'synthetic_board';[void][IO.Directory]::CreateDirectory($profileDir)
 @{SchemaVersion=1;ProfileId='synthetic_board';PackageDirectory='synthetic';Architecture='x64';SupportedBoards=@('SYNTHETIC-BOARD')}|ConvertTo-Json|Set-Content (Join-Path $profileDir 'profile.json') -Encoding UTF8
-foreach($entry in @('configure_nuc.ps1','verify_after_restart.ps1')){
+foreach($entry in @('configure_setup.ps1','verify_after_restart.ps1')){
  $case=Join-Path $fixture ([IO.Path]::GetFileNameWithoutExtension($entry));$source=Join-Path $case 'original';$moved=Join-Path $case 'relocated'
  $script:NucPackageRoot=Join-Path $source 'windows_setup';$DriverPackagePath=Join-Path $source 'windows_driver_packages/synthetic'
  [void][IO.Directory]::CreateDirectory($script:NucPackageRoot);[void][IO.Directory]::CreateDirectory($DriverPackagePath)

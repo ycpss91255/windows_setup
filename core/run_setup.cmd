@@ -1,2 +1,2 @@
 @echo off
-powershell.exe -NoProfile -ExecutionPolicy Bypass -NoExit -File "%~dp0configure_nuc.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -NoExit -File "%~dp0configure_setup.ps1"

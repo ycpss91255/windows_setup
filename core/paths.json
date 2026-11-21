@@ -116,6 +116,7 @@
   "remove_setup_residue.ps1": "modules/cleanup/remove_setup_residue.ps1",
   "remove_setup_residue.cmd": "modules/cleanup/remove_setup_residue.cmd",
   "entry_os_boundary.ps1": "core/entry_os_boundary.ps1",
+  "configure_setup.ps1": "core/configure_setup.ps1",
   "configure_nuc.ps1": "core/configure_nuc.ps1",
   "run_module.ps1": "core/run_module.ps1",
   "prerequisites_library.ps1": "core/prerequisites_library.ps1",

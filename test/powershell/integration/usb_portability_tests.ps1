@@ -59,7 +59,7 @@ Assert ($source.Contains("`$stage=Join-Path `$env:ProgramData 'NUC-Init'") -and 
 $otherRoot='\\fixture.invalid\share\package'
 $external=New-SetupDriverSelection -PackageRoot $otherRoot -DriverPackagePath $newDriver
 Assert (-not $external.RelativePath -and $external.AbsolutePath -eq $newDriver) '跨磁碟不產生假的相對路徑或掃描其他媒體'
-foreach($entry in @('core/configure_nuc.ps1','core/verify_only.ps1','core/verify_after_restart.ps1')){
+foreach($entry in @('core/configure_setup.ps1','core/verify_only.ps1','core/verify_after_restart.ps1')){
  $text=[IO.File]::ReadAllText((Join-Path $root $entry))
  $guard=($text -split "`r?`n"|Where-Object {$_ -match '^if\(\$ExpectedUserSID -and'})
  $ExpectedUserSID='original_user';$sid='different_user';$currentSID='different_user'
