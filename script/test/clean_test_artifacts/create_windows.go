@@ -76,7 +76,7 @@ func createRelativeDirectory(parent syscall.Handle, name string) (syscall.Handle
 	return h, nil
 }
 
-func createOwnedDirectory(path, name string, root bool, anchor tempAnchor) error {
+func createOwnedDirectory(path, name string, root bool, anchor tempAnchor, createToken string, createdID *string) error {
 	parent := filepath.Dir(path)
 	vol := filepath.VolumeName(parent)
 	current := vol + string(os.PathSeparator)
@@ -143,7 +143,7 @@ func createOwnedDirectory(path, name string, root bool, anchor tempAnchor) error
 	if !root {
 		marker = itemMarker
 		id := fmt.Sprintf("%08x:%08x%08x", info.VolumeSerialNumber, info.FileIndexHigh, info.FileIndexLow)
-		data, e = json.Marshal(metadata{Kind: "windows_setup_disposable_v1", Name: name, ID: id})
+		data, e = json.Marshal(metadata{Kind: "windows_setup_disposable_v1", Name: name, ID: id, CreateToken: createToken})
 		if e != nil {
 			return e
 		}
@@ -164,5 +164,11 @@ func createOwnedDirectory(path, name string, root bool, anchor tempAnchor) error
 	if int(n) != len(data) {
 		return errors.New("short marker write")
 	}
-	return syscall.FlushFileBuffers(mh)
+	if e = syscall.FlushFileBuffers(mh); e != nil {
+		return e
+	}
+	if createdID != nil {
+		*createdID = fmt.Sprintf("%08x:%08x%08x", info.VolumeSerialNumber, info.FileIndexHigh, info.FileIndexLow)
+	}
+	return nil
 }

@@ -3,6 +3,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,12 +21,13 @@ const finishMarker = ".windows_setup_cleanup_finished_v1"
 const rootContent = "windows_setup disposable artifacts root v1\n"
 
 type metadata struct {
-	Kind     string          `json:"kind"`
-	Name     string          `json:"name"`
-	ID       string          `json:"id"`
-	Expires  string          `json:"expires"`
-	Nonce    string          `json:"nonce,omitempty"`
-	Manifest []manifestEntry `json:"manifest,omitempty"`
+	Kind        string          `json:"kind"`
+	Name        string          `json:"name"`
+	ID          string          `json:"id"`
+	Expires     string          `json:"expires"`
+	Nonce       string          `json:"nonce,omitempty"`
+	CreateToken string          `json:"create_token,omitempty"`
+	Manifest    []manifestEntry `json:"manifest,omitempty"`
 }
 
 type manifestEntry struct {
@@ -176,6 +179,8 @@ func writeMetadata(p string, m metadata) error {
 	return os.WriteFile(filepath.Join(p, itemMarker), b, 0600)
 }
 
+var createTokenRandom io.Reader = rand.Reader
+var beforeProcessLockHook func()
 var beforeDeleteHook func()
 var afterMarkerReadHook func()
 var afterEnumerateHook func()
@@ -206,7 +211,7 @@ func run(args []string, out io.Writer, now time.Time) error {
 		if beforeTempLockTestHook != nil {
 			beforeTempLockTestHook()
 		}
-		return createOwnedDirectory(abs, "", true, anchor)
+		return createOwnedDirectory(abs, "", true, anchor, "", nil)
 	}
 	root, anchor, e := validateRoot(args[1])
 	if e != nil {
@@ -220,10 +225,62 @@ func run(args []string, out io.Writer, now time.Time) error {
 		return errors.New("invalid item name")
 	}
 	if args[0] == "create" {
-		if len(args) != 3 {
+		printID := len(args) == 4 && args[3] == "--print-identity"
+		if len(args) != 3 && !printID {
 			return errors.New("invalid create arguments")
 		}
-		return createOwnedDirectory(filepath.Join(root, name), name, false, anchor)
+		var createdID, createToken string
+		if printID {
+			var random [32]byte
+			if _, e := io.ReadFull(createTokenRandom, random[:]); e != nil {
+				return fmt.Errorf("generate create token: %w", e)
+			}
+			createToken = hex.EncodeToString(random[:])
+		}
+		if e := createOwnedDirectory(filepath.Join(root, name), name, false, anchor, createToken, &createdID); e != nil {
+			return e
+		}
+		if printID {
+			_, e := fmt.Fprintln(out, createdID+"/"+createToken)
+			return e
+		}
+		return nil
+	}
+	// The opt-in identity comes from the caller, never from the current path.
+	var expectedID string
+	identityMode := false
+	if args[0] == "finish" && len(args) == 6 && args[4] == "--expected-identity" {
+		identityMode = true
+		expectedID = args[5]
+		args = args[:4]
+	} else if args[0] == "clean" && (len(args) == 5 || len(args) == 6) && args[3] == "--expected-identity" {
+		identityMode = true
+		expectedID = args[4]
+		if len(args) == 6 {
+			args = []string{args[0], args[1], args[2], args[5]}
+		} else {
+			args = args[:3]
+		}
+	}
+	var expectedToken string
+	if identityMode {
+		parts := strings.Split(expectedID, "/")
+		if len(parts) != 2 {
+			return errors.New("invalid expected identity")
+		}
+		expectedID, expectedToken = parts[0], parts[1]
+		if len(expectedToken) != 64 || strings.ToLower(expectedToken) != expectedToken {
+			return errors.New("invalid expected identity")
+		}
+		if _, err := hex.DecodeString(expectedToken); err != nil {
+			return errors.New("invalid expected identity")
+		}
+		if len(expectedID) != 25 || expectedID[8] != ':' {
+			return errors.New("invalid expected identity")
+		}
+		if _, err := hex.DecodeString(expectedID[:8] + expectedID[9:]); err != nil || strings.ToLower(expectedID) != expectedID {
+			return errors.New("invalid expected identity")
+		}
 	}
 	p, e := item(root, name)
 	if e != nil {
@@ -240,8 +297,15 @@ func run(args []string, out io.Writer, now time.Time) error {
 	if m.ID == "" || m.ID != id {
 		return errors.New("item identity mismatch")
 	}
+	if identityMode && (expectedID != id || expectedToken != m.CreateToken) {
+		return errors.New("caller item identity mismatch")
+	}
 	if m.Name != name {
 		return errors.New("item marker name mismatch")
+	}
+	lockedExpectedID := id
+	if identityMode {
+		lockedExpectedID = expectedID
 	}
 	switch args[0] {
 	case "finish":
@@ -252,7 +316,7 @@ func run(args []string, out io.Writer, now time.Time) error {
 		if e != nil {
 			return e
 		}
-		return safeFinish(root, name, id, expiry.UTC().Format(time.RFC3339), anchor)
+		return safeFinish(root, name, lockedExpectedID, expectedToken, expiry.UTC().Format(time.RFC3339), anchor)
 	case "clean":
 		if len(args) != 3 && !(len(args) == 4 && args[3] == "--delete") {
 			return errors.New("invalid clean arguments")
@@ -289,10 +353,17 @@ func run(args []string, out io.Writer, now time.Time) error {
 			return e
 		}
 		if len(args) == 3 {
-			_, e = fmt.Fprintln(out, "候選預覽（尚未核對清單與控制代碼）：", p)
+			if identityMode {
+				if e = safePreview(root, name, expectedID, expectedToken, now, anchor); e != nil {
+					return e
+				}
+				_, e = fmt.Fprintln(out, "候選預覽（已核對身分與清單，未刪除）：", p)
+			} else {
+				_, e = fmt.Fprintln(out, "候選預覽（尚未核對清單與控制代碼）：", p)
+			}
 			return e
 		}
-		return safeDelete(root, name, m.ID, now, anchor)
+		return safeDelete(root, name, lockedExpectedID, expectedToken, now, anchor)
 	default:
 		return errors.New("unknown command")
 	}
