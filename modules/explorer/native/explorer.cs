@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 [assembly:System.Runtime.CompilerServices.InternalsVisibleTo("windows_setup_managed_tests")]
-public static class NucExplorerLiveV2 {
+public static class WindowsSetupExplorerOptions {
  [DllImport("shell32.dll")] static extern void SHGetSetSettings(IntPtr p,uint mask,bool set);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr SendMessageTimeout(IntPtr w,uint m,IntPtr a,string b,uint f,uint t,out IntPtr r);
  internal delegate IntPtr BroadcastCall(IntPtr w,uint m,IntPtr a,string b,uint f,uint t,out IntPtr r);

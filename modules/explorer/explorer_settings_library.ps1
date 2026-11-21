@@ -6,8 +6,8 @@ function Invoke-SetupExplorerNotification {
 }
 function Get-SetupExplorerShellOptions {
  param([string]$ModuleRoot,[switch]$Apply)
- if(-not ('NucExplorerLiveV2' -as [type])){Add-Type -Path (Join-Path $ModuleRoot 'native/explorer.cs')}
- [NucExplorerLiveV2]::Options([bool]$Apply)
+ if(-not ('WindowsSetupExplorerOptions' -as [type])){Add-Type -Path (Join-Path $ModuleRoot 'native/explorer.cs')}
+ [WindowsSetupExplorerOptions]::Options([bool]$Apply)
 }
 function New-SetupExplorerShell {New-Object -ComObject Shell.Application}
 function Invoke-SetupExplorerSettings {

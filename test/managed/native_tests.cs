@@ -85,15 +85,15 @@ public static class ManagedNativeTests {
  }
  static void ExplorerCases(){
   uint settings=4;int reads=0,writes=0,broadcasts=0,freed=0;
-  var api=new NucExplorerLiveV2.NativeApi();
+  var api=new WindowsSetupExplorerOptions.NativeApi();
   api.Allocate=delegate(int size){Assert(size==256,"explorer allocates exact shell settings buffer");return Marshal.AllocHGlobal(size);};
   api.Free=delegate(IntPtr memory){freed++;Marshal.FreeHGlobal(memory);};
   api.Settings=delegate(IntPtr memory,uint mask,bool set){Assert(mask==3,"explorer only requests hidden/extension option mask");if(set){settings=(uint)Marshal.ReadInt32(memory);writes++;}else{reads++;Marshal.WriteInt32(memory,(int)settings);}};
   api.Broadcast=delegate(IntPtr window,uint message,IntPtr value,string text,uint flags,uint timeout,out IntPtr result){result=IntPtr.Zero;broadcasts++;Assert(window==(IntPtr)65535 && message==26 && text=="ShellState" && flags==2 && timeout==2000,"explorer broadcasts exact shell state update");return (IntPtr)1;};
-  Assert(NucExplorerLiveV2.Options(false,api)==0 && writes==0 && broadcasts==0 && freed==1,"explorer read mode never writes or broadcasts");
-  Assert(NucExplorerLiveV2.Options(true,api)==3 && settings==7 && reads==4 && writes==1 && broadcasts==1 && freed==2,"explorer preserves unrelated bits and reads back changed options");
+  Assert(WindowsSetupExplorerOptions.Options(false,api)==0 && writes==0 && broadcasts==0 && freed==1,"explorer read mode never writes or broadcasts");
+  Assert(WindowsSetupExplorerOptions.Options(true,api)==3 && settings==7 && reads==4 && writes==1 && broadcasts==1 && freed==2,"explorer preserves unrelated bits and reads back changed options");
   api.Settings=delegate(IntPtr memory,uint mask,bool set){throw new InvalidOperationException("settings fixture failure");};
-  Throws(delegate{NucExplorerLiveV2.Options(true,api);},"explorer native failure propagates");
+  Throws(delegate{WindowsSetupExplorerOptions.Options(true,api);},"explorer native failure propagates");
   Assert(freed==3,"explorer frees unmanaged settings buffer after failure");
  }
  static void ThemeCases(){
@@ -257,7 +257,7 @@ public static class ManagedNativeTests {
  public static void Main(string[] args){
   Assert(typeof(NUC8Icons.Desktop).GetMethod("Capture")!=null,"desktop capture API is available");
   Assert(typeof(NUC8Theme).GetMethod("TaskbarColor")!=null,"theme API is available");
-  Assert(typeof(NucExplorerLiveV2).GetMethod("Options")!=null,"explorer API is available");
+  Assert(typeof(WindowsSetupExplorerOptions).GetMethod("Options")!=null,"explorer API is available");
   Assert(typeof(NucTerminalHotkey).GetMethod("Run")!=null,"hotkey API is available");
   Assert(typeof(WindowsSetup.OobeWimReader).GetMethod("Extract")!=null,"WIM read API is available");
   var method=typeof(NUC8Display.Display).GetMethod("NewMode",BindingFlags.NonPublic|BindingFlags.Static);

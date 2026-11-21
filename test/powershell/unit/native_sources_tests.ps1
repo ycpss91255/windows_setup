@@ -8,7 +8,7 @@ $cases=@(
  @{Native='modules/ssh/native/mdns_publisher.cs';Script='modules/ssh/mdns_publisher_library.ps1';Type='WindowsSetup.MdnsPublisher';Methods='Begin,NativeConstruct,ReadInstance,NativeFree';Key=$null},
  @{Native='modules/desktop/native/desktop_icons.cs';Script='modules/desktop/icons_settings_library.ps1';Type='NUC8Icons.Desktop';Methods='Capture,Position';Key='desktop_icons.cs'},
  @{Native='modules/display/native/display.cs';Script='modules/display/display_settings_library.ps1';Type='NUC8Display.Display';Methods='Read,Apply,NativeScales,GetDpiForSystem';Key='display.cs'},
- @{Native='modules/explorer/native/explorer.cs';Script='modules/explorer/explorer_settings_library.ps1';Type='NucExplorerLiveV2';Methods='Options';Key='explorer.cs'},
+ @{Native='modules/explorer/native/explorer.cs';Script='modules/explorer/explorer_settings_library.ps1';Type='WindowsSetupExplorerOptions';Methods='Options';Key='explorer.cs'},
  @{Native='modules/taskbar/native/taskbar.cs';Script='modules/taskbar/taskbar_settings_library.ps1';Type='WindowsSetup.Taskbar';Methods='AutoHide';Key='taskbar.cs'},
  @{Native='modules/theme/native/theme.cs';Script='modules/theme/theme_settings_library.ps1';Type='NUC8Theme';Methods='ObserveTaskbar,TaskbarColor,SetSysColors,ReadWallpaper,GetSysColor,SystemParametersInfo';Key='theme.cs'},
  @{Native='modules/terminal/native/terminal_hotkey.cs';Script='modules/terminal/terminal_hotkey_library.ps1';Type='NucTerminalHotkey';Methods='Run';Key='terminal_hotkey.cs'},
