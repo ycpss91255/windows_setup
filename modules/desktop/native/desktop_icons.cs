@@ -2,7 +2,7 @@ using System;
 using System.Text;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-namespace NUC8Icons {
+namespace WindowsSetupIcons {
  public class Icon {public int Index;public string Name;public int X;public int Y;}
  public class Layout {public int Width;public int Height;public bool AutoArrange;public Icon[] Icons;}
  [StructLayout(LayoutKind.Sequential)] internal struct Rect {public int Left,Top,Right,Bottom;}

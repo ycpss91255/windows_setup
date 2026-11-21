@@ -7,7 +7,7 @@ $files=@(Get-SetupGuiStageFiles Icons)
 Assert (($files -join '|') -ceq 'core/gui_stage_library.ps1|core/gui_worker.ps1|modules/desktop/icons_settings_library.ps1|modules/desktop/native/desktop_icons.cs') 'Icons approved manifest never includes mutable desktop_layout input'
 $temp=Join-Path ([IO.Path]::GetTempPath()) ('gui_icons_pipeline_'+[guid]::NewGuid().ToString('N'));[void][IO.Directory]::CreateDirectory($temp)
 $package=Join-Path $temp 'package';foreach($file in $files){$to=Join-Path $package $file;[void][IO.Directory]::CreateDirectory((Split-Path $to));Copy-Item -LiteralPath (Join-Path $root $file) -Destination $to}
-Add-Type -TypeDefinition 'using System;using System.Collections.Generic;namespace NUC8Icons{public static class Desktop{public static Queue<object> Frames=new Queue<object>();public static int Moves;public static object Capture(){return Frames.Dequeue();}public static void Position(int i,int x,int y){Moves++;}}}'
+Add-Type -TypeDefinition 'using System;using System.Collections.Generic;namespace WindowsSetupIcons{public static class Desktop{public static Queue<object> Frames=new Queue<object>();public static int Moves;public static object Capture(){return Frames.Dequeue();}public static void Position(int i,int x,int y){Moves++;}}}'
 function Frame {$i=0;[pscustomobject]@{Width=1920;Height=1080;Icons=@(foreach($n in @('控制台','本機','網路','資源回收筒')){[pscustomobject]@{Name=$n;Index=$i;X=($i*100);Y=10};$i++})}}
 $reference=Join-Path $package 'modules/desktop/desktop_layout.json';[IO.File]::WriteAllText($reference,((Frame)|ConvertTo-Json -Depth 5))
 $script:ids=@('{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}','{20D04FE0-3AEA-1069-A2D8-08002B30309D}','{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}','{645FF040-5081-101B-9F08-00AA002F954E}')
@@ -22,13 +22,13 @@ function Get-ItemProperty {param($Path,$ErrorAction) [pscustomobject]@{FFlags=3}
 function Set-ItemProperty {param($Path,$Name,$Value) if($Name -ne 'FFlags' -or $Value -ne 2){throw 'unexpected write'}}
 function Start-Sleep {param($Milliseconds)}
 foreach($mode in @('Load','Verify','Save')){
- [NUC8Icons.Desktop]::Frames.Enqueue((Frame));if($mode -ne 'Save'){[NUC8Icons.Desktop]::Frames.Enqueue((Frame))}
- $beforeMoves=[NUC8Icons.Desktop]::Moves
+ [WindowsSetupIcons.Desktop]::Frames.Enqueue((Frame));if($mode -ne 'Save'){[WindowsSetupIcons.Desktop]::Frames.Enqueue((Frame))}
+ $beforeMoves=[WindowsSetupIcons.Desktop]::Moves
  $r=if($mode -eq 'Verify'){Invoke-SetupGuiFreshVerification -PackageRoot $package -Role Icons}else{Invoke-SetupGuiRole -PackageRoot $package -Role Icons -IconMode $mode}
  $paths=Get-SetupGuiRunPaths -CommonDataRoot $temp -Role Icons -RunId $r.RunId
  $context=Read-SetupGuiContext -CodeRoot $paths.CodeRoot -CommonDataRoot $temp -Role Icons -RunId $r.RunId
  Assert ($r.Success -and $context.IconMode -ceq $mode -and $context.SourcePackageRoot -ceq $package -and $r.SessionId -eq 4) ('actual '+$mode+' mode uses finite protected context and current scope')
- Assert (([NUC8Icons.Desktop]::Moves-$beforeMoves) -eq $(if($mode -eq 'Load'){4}else{0})) ('only Load moves native icons: '+$mode)
+ Assert (([WindowsSetupIcons.Desktop]::Moves-$beforeMoves) -eq $(if($mode -eq 'Load'){4}else{0})) ('only Load moves native icons: '+$mode)
  Assert (-not(Test-Path -LiteralPath (Join-Path $paths.CodeRoot 'modules/desktop/desktop_layout.json'))) ('mutable layout is never a pinned code input: '+$mode)
  if($mode -eq 'Save'){$saved=Get-Content -LiteralPath $reference -Raw|ConvertFrom-Json;Assert ($saved.Width -eq 1920 -and $saved.Icons.Count -eq 4) 'Save controller atomically persists bound worker Reference to original fixed template';$null=Read-SetupGuiContext -CodeRoot $paths.CodeRoot -CommonDataRoot $temp -Role Icons -RunId $r.RunId;Assert $true 'Save leaves all staged source hashes valid'}
 }
