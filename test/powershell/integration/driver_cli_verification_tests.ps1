@@ -39,7 +39,8 @@ function Start-SetupEntryElevated {throw 'CLI fixture forbids elevation'}
 '@
 [IO.File]::WriteAllText((Join-Path $fixture 'core/entry_os_boundary.ps1'),$boundary,$utf)
 $paths=@'
-function Resolve-NucPath {return (Join-Path $PSScriptRoot '../modules/drivers/driver_stub.ps1')}
+function Resolve-NucPath {throw 'legacy resolver reached'}
+function Resolve-SetupPath {return (Join-Path $PSScriptRoot '../modules/drivers/driver_stub.ps1')}
 '@
 [IO.File]::WriteAllText((Join-Path $fixture 'core/paths.ps1'),$paths,$utf)
 [IO.File]::WriteAllText((Join-Path $module 'driver_stub.ps1'),'param([switch]$VerifyOnly,[string]$DriverPackagePath,[switch]$NonInteractive,[string]$ConfirmedBoard,[string]$ConfirmationComputer);@{Verify=[bool]$VerifyOnly;Root=$DriverPackagePath;Quiet=[bool]$NonInteractive}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $PSScriptRoot ''module_called.json'') -Encoding UTF8',$utf)

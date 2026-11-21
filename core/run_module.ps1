@@ -25,7 +25,7 @@ if(-not $isAdmin){
 }
 $driverArguments=@{ConfirmedBoard=$ConfirmedBoard;ConfirmationComputer=$ConfirmationComputer;NonInteractive=$NonInteractive}
 if($PSBoundParameters.ContainsKey('DriverPackagePath')){$driverArguments.DriverPackagePath=$DriverPackagePath}
-$path=Resolve-NucPath ($Module+'.ps1')
+$path=Resolve-SetupPath ($Module+'.ps1')
 if($Restore){& $path -Restore}
 elseif($Module -eq 'Apply-HostsSync'){
  $options=@{Mode=$Mode}

@@ -10,6 +10,10 @@ $fixture=New-RunModuleFixture -SourceRoot $root
 $boundaryFixture=$fixture.Root;$boundaryEntry=$fixture.Entry;$admin=$false
 $boundaryError='';try{Invoke-RunModuleFixture $fixture @{Module='Apply-HostsSync';ExpectedUserSID='fixture-sid';VerifyOnly=$true;Mode='SSH'}}catch{$boundaryError=$_.Exception.Message}
 Assert (Test-Path -LiteralPath (Join-Path $boundaryFixture 'captured.txt')) ('run_module uses replaceable identity and elevation boundary: '+$boundaryError)
+Invoke-RunModuleFixture $fixture @{Module='Apply-UACSettings';ExpectedUserSID='fixture-sid';VerifyOnly=$true} -Admin $true
+$resolverMarker=Join-Path $boundaryFixture 'resolver_called.txt'
+Assert ((Test-Path -LiteralPath $resolverMarker) -and [IO.File]::ReadAllText($resolverMarker) -ceq 'Apply-UACSettings.ps1') '真入口以中性解析器分派固定模組'
+Invoke-RunModuleFixture $fixture @{Module='Apply-HostsSync';ExpectedUserSID='fixture-sid';VerifyOnly=$true;Mode='SSH'}
 $capturePath=Join-Path $boundaryFixture 'captured.txt'
 $originalCapture=[IO.File]::ReadAllText($capturePath)
 $equivalent=Join-Path $boundaryFixture './run_module.ps1'
@@ -39,7 +43,7 @@ Assert ($capture.DriverPackagePath -ceq $expectedQuoted -and $capture.ConfirmedB
 $capturePath=Join-Path $boundaryFixture 'captured.txt';$dummyPath=Join-Path $boundaryFixture 'dummy.json'
 $pathsMarker=Join-Path $boundaryFixture 'paths_loaded.txt'
 [IO.File]::Delete($capturePath);[IO.File]::Delete($dummyPath);[IO.File]::Delete($pathsMarker);$rejected=$false;try{Invoke-RunModuleFixture $fixture @{Module='Apply-UACSettings';ExpectedUserSID='other'} -Admin $admin}catch{$rejected=$true}
-Assert ($rejected -and -not (Test-Path $capturePath) -and -not (Test-Path $dummyPath) -and -not (Test-Path $pathsMarker)) 'different elevation account is rejected before paths, launch or module'
+Assert ($rejected -and -not (Test-Path $capturePath) -and -not (Test-Path $dummyPath) -and -not (Test-Path $pathsMarker) -and -not (Test-Path $resolverMarker)) 'different elevation account is rejected before paths, launch or module'
 foreach($admin in @('false','true')){
  $adminFlag=($admin -eq 'true')
  foreach($invalid in @(@{Module='Unknown'},@{Module='Apply-UACSettings';ApplyPolicy=$true},@{Module='Apply-UACSettings';Restore=$true;VerifyOnly=$true},@{Module='Apply-PrivacySettings';Restore=$true},@{Module='Apply-PrivacySettings';SyncOnly=$true},@{Module='Apply-PrivacySettings';Mode='SSH'})){

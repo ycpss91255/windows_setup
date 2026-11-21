@@ -42,7 +42,8 @@ function Start-SetupEntryElevated { param($Command) [IO.File]::WriteAllText((Joi
 '@,[Text.UTF8Encoding]::new($true))
  [IO.File]::WriteAllText((Join-Path $directory 'paths.ps1'),@'
 [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'paths_loaded.txt'),'loaded')
-function Resolve-NucPath { param($Name) if($Name -notmatch '^[A-Za-z0-9-]+[.]ps1$'){throw 'unexpected module'};Join-Path $PSScriptRoot 'dummy.ps1' }
+function Resolve-NucPath { throw 'legacy resolver reached' }
+function Resolve-SetupPath { param($Name) if($Name -notmatch '^[A-Za-z0-9-]+[.]ps1$'){throw 'unexpected module'};[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'resolver_called.txt'),$Name);Join-Path $PSScriptRoot 'dummy.ps1' }
 '@,[Text.UTF8Encoding]::new($true))
  [IO.File]::WriteAllText((Join-Path $directory 'dummy.ps1'),@'
 param([switch]$VerifyOnly,[switch]$Restore,[switch]$SyncOnly,[string]$Mode,[string]$DriverPackagePath,[string]$ConfirmedBoard,[string]$ConfirmationComputer,[switch]$NonInteractive,[switch]$ApplyPolicy)
@@ -79,8 +80,8 @@ function Invoke-RunModuleFixture {
   if($key -in @('VerifyOnly','ApplyPolicy','Restore','SyncOnly','NonInteractive')){if($Arguments[$key] -isnot [bool]){throw 'expected boolean switch'}}
   elseif($Arguments[$key] -isnot [string]){throw 'expected string parameter'}
  }
- foreach($name in @('args.json','captured.txt','dummy.json','paths_loaded.txt','case.log')){$path=Join-Path $Fixture.Root $name;if(Test-Path -LiteralPath $path){Assert-RunModuleSafePath $path}}
- foreach($name in @('captured.txt','dummy.json','paths_loaded.txt')){[IO.File]::Delete((Join-Path $Fixture.Root $name))}
+ foreach($name in @('args.json','captured.txt','dummy.json','paths_loaded.txt','resolver_called.txt','case.log')){$path=Join-Path $Fixture.Root $name;if(Test-Path -LiteralPath $path){Assert-RunModuleSafePath $path}}
+ foreach($name in @('captured.txt','dummy.json','paths_loaded.txt','resolver_called.txt')){[IO.File]::Delete((Join-Path $Fixture.Root $name))}
  $Arguments|ConvertTo-Json -Compress|Set-Content -LiteralPath (Join-Path $Fixture.Root 'args.json') -Encoding UTF8
  $previous=$env:RUN_MODULE_FIXTURE_ADMIN;$prior=$ErrorActionPreference
  try {
