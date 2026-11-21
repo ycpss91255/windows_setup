@@ -5,41 +5,47 @@ function Assert([bool]$Condition,[string]$Message){Write-Host ('@@ASSERT@@'+(@{N
 $fixture=Join-Path $env:TEMP ('desktop_safety_'+[guid]::NewGuid().ToString('N'))
 $desktop=Join-Path $fixture '桌面';$common=Join-Path $fixture 'Common Desktop'
 $fixtureDesktopRoots=@($desktop,$common)
-$source=[IO.File]::ReadAllText((Join-Path $root 'modules/desktop/desktop_settings_library.ps1'))
-$tokens=$null;$errors=$null;$leafAst=[Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)
-$call=$leafAst.Find({param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Assert-DesktopSourceLocation'},$true)
-Assert ($null -ne $call) 'actual named leaf invokes original source safety before cleanup'
+foreach($path in $fixtureDesktopRoots){[void][IO.Directory]::CreateDirectory($path)}
 . (Join-Path $root 'modules/desktop/desktop_safety.ps1')
-$prefix=$call.Extent.Text.Replace('$DesktopRoots','$fixtureDesktopRoots')
+. (Join-Path $root 'modules/desktop/desktop_settings_library.ps1')
+# VerifyOnly must not invoke any mutating, native or process operation.
+function Remove-SetupDesktopEntry {throw 'unexpected desktop deletion'}
+function New-Item {throw 'unexpected filesystem or registry creation'}
+function New-ItemProperty {throw 'unexpected registry mutation'}
+function Set-ItemProperty {throw 'unexpected registry mutation'}
+function Remove-Item {throw 'unexpected deletion'}
+function Add-Type {throw 'unexpected native operation'}
+function Start-Process {throw 'unexpected process launch'}
+$tokens=$null;$errors=$null
+$leafAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'modules/desktop/desktop_settings_library.ps1'),[ref]$tokens,[ref]$errors)
+$call=$leafAst.Find({param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Assert-DesktopSourceLocation'},$true)
+Assert ($null -ne $call -and $call.Extent.Text -match '\-SourceRoot\s+\$SourcePackageRoot' -and $call.Extent.Text -match '\-DesktopRoots\s+\$DesktopRoots') 'actual named leaf invokes original source safety before cleanup'
 foreach($case in @(
- @{Name='nested package';Package=(Join-Path $desktop 'windows_setup');Worker=$false;Reject=$true},
- @{Name='package equals desktop';Package=$desktop;Worker=$false;Reject=$true},
- @{Name='common desktop';Package=(Join-Path $common 'windows_setup');Worker=$false;Reject=$true},
- @{Name='worker original desktop source';Package=(Join-Path $desktop 'windows_setup');Worker=$true;Reject=$true},
- @{Name='worker missing source identity';Package='';Worker=$true;Reject=$true},
- @{Name='safe similar prefix';Package=($desktop+'2\windows_setup');Worker=$false;Reject=$false}
+ @{Name='nested package';Package=(Join-Path $desktop 'windows_setup');Reject=$true},
+ @{Name='package equals desktop';Package=$desktop;Reject=$true},
+ @{Name='common desktop';Package=(Join-Path $common 'windows_setup');Reject=$true},
+ @{Name='worker original desktop source';Package=(Join-Path $desktop 'windows_setup');Reject=$true},
+ @{Name='worker missing source identity';Package='';Reject=$true},
+ @{Name='safe similar prefix';Package=($desktop+'2\windows_setup');Reject=$false}
 )){
  $packageRoot=$case.Package
- if($packageRoot){New-Item -ItemType Directory (Join-Path $packageRoot 'modules/desktop') -Force|Out-Null;[IO.File]::WriteAllText((Join-Path $packageRoot 'keep.txt'),'keep')}
- $moduleDirectory=if($case.Worker){Join-Path $fixture 'ProgramData/NUC8-Setup'}else{Join-Path $packageRoot 'modules/desktop'}
- $Worker=$case.Worker;$SourcePackageRoot=$packageRoot;$PSScriptRoot=$moduleDirectory
- $refused=$false
- try{& ([scriptblock]::Create($prefix))}catch{$refused=$true;if(-not $case.Reject){Write-Host $_.Exception.Message}}
+ if($packageRoot){[void][IO.Directory]::CreateDirectory($packageRoot);[IO.File]::WriteAllText((Join-Path $packageRoot 'keep.txt'),'keep')}
+ $refused=$false;$result=$null
+ try{$result=Invoke-SetupDesktopSettings -ModuleRoot (Join-Path $root 'modules/desktop') -SourcePackageRoot $packageRoot -DesktopRoots $fixtureDesktopRoots -VerifyOnly}catch{if($packageRoot){$refused=$_.Exception.Message -match '工具包不可位於桌面'}else{$refused=$_.Exception -is [System.Management.Automation.ParameterBindingException]};if(-not $case.Reject -or -not $refused){throw}}
  Assert ($refused -eq $case.Reject) ('actual desktop module pre-mutation guard: '+$case.Name)
+ if(-not $case.Reject){Assert ($null -ne $result -and @($result.DesktopRoots).Count -eq 2 -and @($result.DeletedItems).Count -eq 0 -and -not $result.Success) ('safe desktop returns verification result: '+$case.Name)}
  if($packageRoot){Assert (([IO.File]::ReadAllText((Join-Path $packageRoot 'keep.txt'))) -eq 'keep') ('package contents retained: '+$case.Name)}
 }
-# Exercise the actual main preflight guard with only folder-location inputs substituted.
-$preflight=[IO.File]::ReadAllText((Join-Path $root 'core/prerequisites_library.ps1'))
-$tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseInput($preflight,[ref]$tokens,[ref]$errors)
-$guard=$ast.Find({param($a)$a -is [Management.Automation.Language.ForEachStatementAst] -and $a.Variable.VariablePath.UserPath -eq 'desktop'},$true)
-if($guard){$guardText=$guard.Extent.Text.Replace("@([Environment]::GetFolderPath('DesktopDirectory'),[Environment]::GetFolderPath('CommonDesktopDirectory'))",'$fixtureDesktopRoots')}
-else{$guardText=($preflight -split "`r?`n"|Where-Object {$_ -match '^ Assert-DesktopSourceLocation'}) -join "`n";$guardText=$guardText.Replace("@([Environment]::GetFolderPath('DesktopDirectory'),[Environment]::GetFolderPath('CommonDesktopDirectory'))",'$fixtureDesktopRoots')}
-Assert (-not [string]::IsNullOrWhiteSpace($guardText)) 'actual complete preflight still contains the desktop source guard'
-$helper=Join-Path $root 'modules/desktop/desktop_safety.ps1';if(Test-Path $helper){. $helper}
+# The main preflight uses the same named guard with actual system desktop roots.
+$preflight=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'core/prerequisites_library.ps1'),[ref]$tokens,[ref]$errors)
+$guard=$preflight.Find({param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Assert-DesktopSourceLocation'},$true)
+Assert ($null -ne $guard -and $guard.Extent.Text -match '\-SourceRoot\s+\$SourceRoot' -and $guard.Extent.Text -match 'DesktopDirectory' -and $guard.Extent.Text -match 'CommonDesktopDirectory') 'actual complete preflight still contains the desktop source guard'
+[void][IO.Directory]::CreateDirectory((Join-Path $desktop '中文 子目錄'))
+$index=0
 foreach($location in @($desktop,(Join-Path $desktop '中文 子目錄'),$common,$desktop.ToUpperInvariant())){
- $script:NucPackageRoot=$location;$SourceRoot=$location;$refused=$false
- try{. ([scriptblock]::Create($guardText))}catch{$refused=$true}
- Assert $refused ('actual main preflight rejects desktop equality and descendants: '+$location)
+ $refused=$false
+ try{Assert-DesktopSourceLocation -SourceRoot $location -DesktopRoots $fixtureDesktopRoots}catch{$refused=$_.Exception.Message -match '工具包不可位於桌面'}
+ Assert $refused ('actual main preflight rejects desktop equality and descendants: case '+(++$index))
 }
 # Fixed private worker must use the protected original root, not its copied code directory.
 $gui=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'core/gui_stage_library.ps1'),[ref]$tokens,[ref]$errors)
