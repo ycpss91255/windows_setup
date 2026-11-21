@@ -97,65 +97,65 @@ public static class ManagedNativeTests {
   Assert(freed==3,"explorer frees unmanaged settings buffer after failure");
  }
  static void ThemeCases(){
-  int releases=0;var api=new NUC8Theme.NativeApi();
+  int releases=0;var api=new WindowsSetupTheme.NativeApi();
   api.Dpi=delegate(IntPtr context){Assert(context==(IntPtr)(-4),"theme requests expected thread DPI context");return IntPtr.Zero;};
   api.Find=delegate(string kind,string title){Assert(kind=="Shell_TrayWnd" && title==null,"theme finds the taskbar class");return (IntPtr)1;};
-  api.Rectangle=delegate(IntPtr window,out NUC8Theme.Rect rect){rect=new NUC8Theme.Rect{Left=100,Top=900,Right=1920,Bottom=940};return true;};
+  api.Rectangle=delegate(IntPtr window,out WindowsSetupTheme.Rect rect){rect=new WindowsSetupTheme.Rect{Left=100,Top=900,Right=1920,Bottom=940};return true;};
   api.DC=delegate(IntPtr window){Assert(window==IntPtr.Zero,"theme samples screen DC");return (IntPtr)2;};
-  api.Clip=delegate(IntPtr dc,out NUC8Theme.Rect rect){Assert(dc==(IntPtr)2,"theme checks the acquired screen clipping context");rect=new NUC8Theme.Rect{Left=0,Top=0,Right=1920,Bottom=1080};return 2;};
+  api.Clip=delegate(IntPtr dc,out WindowsSetupTheme.Rect rect){Assert(dc==(IntPtr)2,"theme checks the acquired screen clipping context");rect=new WindowsSetupTheme.Rect{Left=0,Top=0,Right=1920,Bottom=1080};return 2;};
   api.State=delegate{return 0;};
   api.Release=delegate(IntPtr window,IntPtr dc){Assert(window==IntPtr.Zero && dc==(IntPtr)2,"theme releases exact acquired DC");releases++;return 1;};
   api.Pixel=delegate(IntPtr dc,int x,int y){Assert(dc==(IntPtr)2 && x==108 && y==920,"theme reads expected taskbar sample coordinate");return 0x00332211;};
-  var rgb=NUC8Theme.TaskbarColor(api);Assert(rgb[0]==17 && rgb[1]==34 && rgb[2]==51 && releases==1,"theme converts COLORREF channels and releases DC");
-  api.Find=delegate(string kind,string title){return IntPtr.Zero;};Throws(delegate{NUC8Theme.TaskbarColor(api);},"missing taskbar is rejected",typeof(Exception));
+  var rgb=WindowsSetupTheme.TaskbarColor(api);Assert(rgb[0]==17 && rgb[1]==34 && rgb[2]==51 && releases==1,"theme converts COLORREF channels and releases DC");
+  api.Find=delegate(string kind,string title){return IntPtr.Zero;};Throws(delegate{WindowsSetupTheme.TaskbarColor(api);},"missing taskbar is rejected",typeof(Exception));
   api.Find=delegate(string kind,string title){return (IntPtr)1;};
-  api.Rectangle=delegate(IntPtr window,out NUC8Theme.Rect rect){rect=new NUC8Theme.Rect();return false;};Throws(delegate{NUC8Theme.TaskbarColor(api);},"failed taskbar rectangle query is rejected",typeof(Exception));
-  api.Rectangle=delegate(IntPtr window,out NUC8Theme.Rect rect){rect=new NUC8Theme.Rect{Top=10,Bottom=10};return true;};Throws(delegate{NUC8Theme.TaskbarColor(api);},"empty taskbar rectangle is rejected",typeof(Exception));
-  api.Rectangle=delegate(IntPtr window,out NUC8Theme.Rect rect){rect=new NUC8Theme.Rect{Right=1920,Top=900,Bottom=940};return true;};
-  api.Pixel=delegate(IntPtr dc,int x,int y){return 0xffffffff;};Throws(delegate{NUC8Theme.TaskbarColor(api);},"invalid pixel result is rejected",typeof(Exception));
+  api.Rectangle=delegate(IntPtr window,out WindowsSetupTheme.Rect rect){rect=new WindowsSetupTheme.Rect();return false;};Throws(delegate{WindowsSetupTheme.TaskbarColor(api);},"failed taskbar rectangle query is rejected",typeof(Exception));
+  api.Rectangle=delegate(IntPtr window,out WindowsSetupTheme.Rect rect){rect=new WindowsSetupTheme.Rect{Top=10,Bottom=10};return true;};Throws(delegate{WindowsSetupTheme.TaskbarColor(api);},"empty taskbar rectangle is rejected",typeof(Exception));
+  api.Rectangle=delegate(IntPtr window,out WindowsSetupTheme.Rect rect){rect=new WindowsSetupTheme.Rect{Right=1920,Top=900,Bottom=940};return true;};
+  api.Pixel=delegate(IntPtr dc,int x,int y){return 0xffffffff;};Throws(delegate{WindowsSetupTheme.TaskbarColor(api);},"invalid pixel result is rejected",typeof(Exception));
   Assert(releases==2,"theme releases DC when pixel read reports failure");
-  api.Pixel=delegate(IntPtr dc,int x,int y){throw new InvalidOperationException("pixel fixture failure");};Throws(delegate{NUC8Theme.TaskbarColor(api);},"pixel exception propagates");
+  api.Pixel=delegate(IntPtr dc,int x,int y){throw new InvalidOperationException("pixel fixture failure");};Throws(delegate{WindowsSetupTheme.TaskbarColor(api);},"pixel exception propagates");
   Assert(releases==3,"theme releases DC when pixel read throws");
   int outsideReads=0;
-  api.Rectangle=delegate(IntPtr window,out NUC8Theme.Rect rect){rect=new NUC8Theme.Rect{Left=0,Top=1078,Right=1920,Bottom=1126};return true;};
+  api.Rectangle=delegate(IntPtr window,out WindowsSetupTheme.Rect rect){rect=new WindowsSetupTheme.Rect{Left=0,Top=1078,Right=1920,Bottom=1126};return true;};
   api.Pixel=delegate(IntPtr dc,int x,int y){if(x<0||x>=1920||y<0||y>=1080){outsideReads++;return 0xffffffff;}return 0x00151515;};
-  Throws(delegate{NUC8Theme.TaskbarColor(api);},"offscreen sample without confirmed autohide is rejected",typeof(Exception));
+  Throws(delegate{WindowsSetupTheme.TaskbarColor(api);},"offscreen sample without confirmed autohide is rejected",typeof(Exception));
   Console.WriteLine("OFFSCREEN_PIXEL_CALLS="+outsideReads);
   Assert(outsideReads==0,"theme rejects offscreen geometry before asking GetPixel outside the clip region");
   api.State=delegate{return 1;};
-  var hidden=NUC8Theme.ObserveTaskbar(api);
+  var hidden=WindowsSetupTheme.ObserveTaskbar(api);
   Assert(hidden.AutoHidden && hidden.RGB.Length==0 && outsideReads==0,"confirmed autohide outside the clip has no invented RGB and never samples the wallpaper");
-  Throws(delegate{NUC8Theme.TaskbarColor(api);},"legacy RGB API never invents color for an auto-hidden taskbar",typeof(Exception));
+  Throws(delegate{WindowsSetupTheme.TaskbarColor(api);},"legacy RGB API never invents color for an auto-hidden taskbar",typeof(Exception));
   bool malformedRejected=true;
   foreach(uint invalidState in new uint[]{5,uint.MaxValue}){
    api.State=delegate{return invalidState;};bool rejected=false;
-   try{NUC8Theme.ObserveTaskbar(api);}catch(Exception){rejected=true;}
+   try{WindowsSetupTheme.ObserveTaskbar(api);}catch(Exception){rejected=true;}
    Console.WriteLine("MALFORMED_STATE_"+invalidState+"_REJECTED="+rejected);malformedRejected&=rejected;
   }
   api.State=delegate{return 1;};
-  api.Clip=delegate(IntPtr dc,out NUC8Theme.Rect rect){rect=new NUC8Theme.Rect{Right=1920,Bottom=1080};return 4;};
-  bool unknownClipRejected=false;try{NUC8Theme.ObserveTaskbar(api);}catch(Exception){unknownClipRejected=true;}
+  api.Clip=delegate(IntPtr dc,out WindowsSetupTheme.Rect rect){rect=new WindowsSetupTheme.Rect{Right=1920,Bottom=1080};return 4;};
+  bool unknownClipRejected=false;try{WindowsSetupTheme.ObserveTaskbar(api);}catch(Exception){unknownClipRejected=true;}
   Console.WriteLine("UNKNOWN_CLIP_4_REJECTED="+unknownClipRejected);
   Assert(malformedRejected && unknownClipRejected,"unknown appbar and clipping values never authorize a hidden observation");
-  api.Clip=delegate(IntPtr dc,out NUC8Theme.Rect rect){rect=new NUC8Theme.Rect{Right=1920,Bottom=1080};return 2;};
+  api.Clip=delegate(IntPtr dc,out WindowsSetupTheme.Rect rect){rect=new WindowsSetupTheme.Rect{Right=1920,Bottom=1080};return 2;};
   api.State=delegate{return 3;};
-  Assert(NUC8Theme.ObserveTaskbar(api).AutoHidden,"documented autohide plus always-on-top remains accepted");
+  Assert(WindowsSetupTheme.ObserveTaskbar(api).AutoHidden,"documented autohide plus always-on-top remains accepted");
   api.State=delegate{return 2;};
-  Throws(delegate{NUC8Theme.ObserveTaskbar(api);},"always-on-top alone cannot authorize a hidden observation",typeof(Exception));
+  Throws(delegate{WindowsSetupTheme.ObserveTaskbar(api);},"always-on-top alone cannot authorize a hidden observation",typeof(Exception));
   api.State=delegate{throw new InvalidOperationException("state query failed");};
-  Throws(delegate{NUC8Theme.ObserveTaskbar(api);},"failed autohide state query cannot pass as hidden");
-  api.Clip=delegate(IntPtr dc,out NUC8Theme.Rect rect){rect=new NUC8Theme.Rect();return 0;};
-  Throws(delegate{NUC8Theme.ObserveTaskbar(api);},"failed clip query cannot pass as hidden",typeof(Exception));
-  api.Clip=delegate(IntPtr dc,out NUC8Theme.Rect rect){rect=new NUC8Theme.Rect{Right=1920,Bottom=1080};return 1;};
-  Throws(delegate{NUC8Theme.ObserveTaskbar(api);},"empty clipping region cannot pass as hidden",typeof(Exception));
+  Throws(delegate{WindowsSetupTheme.ObserveTaskbar(api);},"failed autohide state query cannot pass as hidden");
+  api.Clip=delegate(IntPtr dc,out WindowsSetupTheme.Rect rect){rect=new WindowsSetupTheme.Rect();return 0;};
+  Throws(delegate{WindowsSetupTheme.ObserveTaskbar(api);},"failed clip query cannot pass as hidden",typeof(Exception));
+  api.Clip=delegate(IntPtr dc,out WindowsSetupTheme.Rect rect){rect=new WindowsSetupTheme.Rect{Right=1920,Bottom=1080};return 1;};
+  Throws(delegate{WindowsSetupTheme.ObserveTaskbar(api);},"empty clipping region cannot pass as hidden",typeof(Exception));
   int beforeNoDc=releases;api.DC=delegate(IntPtr window){return IntPtr.Zero;};
-  Throws(delegate{NUC8Theme.ObserveTaskbar(api);},"missing screen context is rejected",typeof(Exception));
+  Throws(delegate{WindowsSetupTheme.ObserveTaskbar(api);},"missing screen context is rejected",typeof(Exception));
   Assert(releases==beforeNoDc,"no unacquired screen context is released");
   api.DC=delegate(IntPtr window){return (IntPtr)2;};
-  api.Clip=delegate(IntPtr dc,out NUC8Theme.Rect rect){rect=new NUC8Theme.Rect{Left=-1920,Top=0,Right=0,Bottom=1080};return 3;};
-  api.Rectangle=delegate(IntPtr window,out NUC8Theme.Rect rect){rect=new NUC8Theme.Rect{Left=-1920,Top=1032,Right=0,Bottom=1080};return true;};
+  api.Clip=delegate(IntPtr dc,out WindowsSetupTheme.Rect rect){rect=new WindowsSetupTheme.Rect{Left=-1920,Top=0,Right=0,Bottom=1080};return 3;};
+  api.Rectangle=delegate(IntPtr window,out WindowsSetupTheme.Rect rect){rect=new WindowsSetupTheme.Rect{Left=-1920,Top=1032,Right=0,Bottom=1080};return true;};
   api.Pixel=delegate(IntPtr dc,int x,int y){Assert(x==-1912 && y==1056,"secondary monitor sample retains negative desktop coordinates");return 0x00151515;};
-  var visible=NUC8Theme.ObserveTaskbar(api);
+  var visible=WindowsSetupTheme.ObserveTaskbar(api);
   Assert(!visible.AutoHidden && visible.RGB[0]==21,"visible native pixels remain verified even when the state API is unavailable");
  }
  static void HotkeyCases(){
@@ -256,7 +256,7 @@ public static class ManagedNativeTests {
  }
  public static void Main(string[] args){
   Assert(typeof(NUC8Icons.Desktop).GetMethod("Capture")!=null,"desktop capture API is available");
-  Assert(typeof(NUC8Theme).GetMethod("TaskbarColor")!=null,"theme API is available");
+  Assert(typeof(WindowsSetupTheme).GetMethod("TaskbarColor")!=null,"theme API is available");
   Assert(typeof(NucExplorerLiveV2).GetMethod("Options")!=null,"explorer API is available");
   Assert(typeof(NucTerminalHotkey).GetMethod("Run")!=null,"hotkey API is available");
   Assert(typeof(WindowsSetup.OobeWimReader).GetMethod("Extract")!=null,"WIM read API is available");

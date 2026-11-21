@@ -1,7 +1,7 @@
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
-public static class NUC8Theme {
+public static class WindowsSetupTheme {
  [StructLayout(LayoutKind.Sequential)]public struct Rect{public int Left,Top,Right,Bottom;}
  [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern IntPtr FindWindow(string cls,string title);
  [DllImport("user32.dll")]static extern bool GetWindowRect(IntPtr hwnd,out Rect rect);
