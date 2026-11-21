@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added（新增）
+
+- 維護者可核對並由固定上游 Git 提交重現精簡的 Win11Debloat 來源樹。
+
 ## [v0.2.6] — 2026-11-21
 ### Changed（變更）
 

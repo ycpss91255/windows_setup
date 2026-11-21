@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"windows_setup/script/test/acceptance"
 )
 
 func TestWindowsProfileContainsAllOwnedEngineSources(t *testing.T) {
@@ -17,7 +15,7 @@ func TestWindowsProfileContainsAllOwnedEngineSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	owned, err := acceptance.OwnedGoFiles(root)
+	tracked, err := exec.Command("git", "-C", root, "ls-files", "--", "script/test/clean_test_artifacts/*.go").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,10 +39,11 @@ func TestWindowsProfileContainsAllOwnedEngineSources(t *testing.T) {
 		}
 	}
 	count := 0
-	for _, path := range owned {
-		if !strings.HasPrefix(path, "windows_setup/script/test/clean_test_artifacts/") {
+	for _, path := range strings.Split(strings.TrimSpace(string(tracked)), "\n") {
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			continue
 		}
+		path = "windows_setup/" + path
 		count++
 		if !seen[path] {
 			t.Errorf("owned engine Go source omitted from actual Windows profile: %s", path)

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	a "windows_setup/script/test/acceptance"
 	c "windows_setup/script/test/repo_coverage"
 )
 
@@ -33,14 +32,13 @@ func TestDeploymentExecutableLineCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	owned, err := a.OwnedGoFiles(root)
+	tracked, err := exec.Command("git", "-C", root, "ls-files", "--", "script/test/verify_deployment/*.go").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
 	sources := map[string][]byte{}
-	for _, name := range owned {
-		path := strings.TrimPrefix(name, "windows_setup/")
-		if !strings.HasPrefix(path, "script/test/verify_deployment/") {
+	for _, path := range strings.Split(strings.TrimSpace(string(tracked)), "\n") {
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			continue
 		}
 		content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))

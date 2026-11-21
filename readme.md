@@ -535,6 +535,8 @@ Windows 啟用由使用者另外處理；本工具不處理 Ubuntu 分割或安�
 
 Win11Debloat 清理除了檢查已安裝與預佈建 App，還會逐項讀回 `debloat_profile.json` 所選功能的登錄型別及值，不把第三方程序退出 0 當成全部成功。目前十項功能包含建議、廣告、Bing 與部分 AI 設定；依上游 Windows build 適用範圍，不適用項目在結果中明列 `Skipped`，不宣稱已套用。清單中的 Microsoft.Copilot、Microsoft.GamingServices 與 Microsoft.Edge.GameAssist 另以精確套件身分處理已安裝和預佈建版本，仍以讀回結果判定成功；結果保存在 `%ProgramData%\NUC8-Setup\Debloat-Result.json`；`windows.cmd -VerifyOnly` 會重新讀回本輪狀態，不重新清理或套用設定。登錄讀回不代表所有資料傳輸停止或所有應用程式 AI 功能已移除。
 
+第三方來源釘選、精簡範圍與維護者同步方式見[第三方來源與授權](doc/third_party.md)。
+
 OneDrive 獨立入口為 `modules\debloat\remove_one_drive.cmd`；解除安裝後僅清除空的預設資料夾，不刪除個人或雲端資料。清理模組對 Windows.old、Contacts、Saved Games、Favorites、Links、Searches 只清除符合空目錄條件的項目；含資料或連結時保留。具名預設 Bing 書籤、捷徑與內建搜尋定義可清除，其他自訂內容保留；不可移除及僅 Staged 的 Windows 元件不代表一般已安裝 App 未清理。
 
 Hosts／SSH 獨立入口為 `modules\ssh\apply_hosts_sync.cmd`、`sync_hosts.cmd`、`sync_ssh.cmd`。目前使用者的 `.config\hosts\sites.json` 支援任意站點，透過 Outputs 分別啟用 Hosts／SSH；每 10 秒重新讀取來源，未變更不重寫。SSID 若受定位權限限制，可用 NetworkProfile 或 IPv4Cidr，不會強制開啟定位。框架沒有實際主機清單或私鑰；詳細範例保留在模組內 `modules\ssh\custom_hosts_sync\usage.txt` 與 SSH／hosts README。
@@ -619,7 +621,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\script\package\export_
 
 依賴方向為維護工具／測試 → 交付執行樹。`core`／`modules` 不依賴 `script`、`test` 或 `.github`；一般使用與獨立驅動安裝不需要儲存庫維護工具。
 
-自有原始檔與目錄使用小寫與底線，新驅動安裝日誌位於 `modules\drivers/driver_logs`。為保留已部署電腦的續跑資料，`%ProgramData%\NUC8-Setup`、`NUC-Init`、`CustomHostsSync` 及既有排程工作名稱維持相容；這些是系統既存識別，不是新增的儲存庫目錄。第三方 `win11debloat` 內部目錄及內容保持上游原樣。
+自有原始檔與目錄使用小寫與底線，新驅動安裝日誌位於 `modules\drivers/driver_logs`。為保留已部署電腦的續跑資料，`%ProgramData%\NUC8-Setup`、`NUC-Init`、`CustomHostsSync` 及既有排程工作名稱維持相容；這些是系統既存識別，不是新增的儲存庫目錄。第三方 `win11debloat` 保留檔案的內容維持上游原樣；本專案固定 CLI 所需語系與精簡範圍見第三方來源說明。
 
 ## Windows CI
 設定資產依平台分層驗證：Server runner 對真實三檔執行來源／雜湊／XML 正負測試，另以原生 WIM 唯讀抽取核對已審查基線。Windows 11 client 的 `Get-ProvisioningPackage` 不在 Server runner 提供；runtime 仍強制呼叫它，沒有略過或降級。要在 Windows 11 本機重做原生 metadata 六項唯讀檢查，可從儲存庫根目錄執行：
