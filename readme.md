@@ -2,7 +2,7 @@
 
 [![Windows CI](https://github.com/ycpss91255/windows_setup/actions/workflows/windows_tests.yml/badge.svg)](https://github.com/ycpss91255/windows_setup/actions/workflows/windows_tests.yml)
 
-![Language](https://img.shields.io/badge/Language-Go%20%2F%20PowerShell-blue?style=flat-square)
+![Runtime: PowerShell | C#](https://img.shields.io/badge/Runtime-PowerShell%20%7C%20C%23-blue?style=flat-square)
 [![Coverage](https://ycpss91255.github.io/windows_setup/main/coverage.svg)](https://ycpss91255.github.io/windows_setup/)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue?style=flat-square)](license)
 
