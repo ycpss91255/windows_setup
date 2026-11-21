@@ -12,3 +12,14 @@ function Get-SetupSSHFirewallStatus {
   [pscustomobject]@{Passed=[bool]$valid;Detail=('Enabled='+$rule.Enabled+'; Direction='+$rule.Direction+'; Action='+$rule.Action+'; Profile='+$rule.Profile+'; RemoteAddress='+($addresses -join ',')+'; Protocol/Port='+(@($filters|ForEach-Object {$_.Protocol.ToString()+'/'+($_.LocalPort -join ',')}) -join ';'))}
  } catch {[pscustomobject]@{Passed=$false;Detail=('無法驗證 SSH 防火牆：'+$_.Exception.Message)}}
 }
+function Add-SetupSSHFirewallVerificationCheck {
+ $sshFirewall=Get-SetupSSHFirewallStatus
+ Add-Check 'SSH 防火牆規則' $sshFirewall.Passed $sshFirewall.Detail
+}
+function Set-SetupSSHFirewallRule {
+ $name='OpenSSH-Server-In-TCP'
+ if(Get-NetFirewallRule -Name $name -ErrorAction SilentlyContinue){Set-NetFirewallRule -Name $name -Protocol TCP -LocalPort 22 -Enabled True -Direction Inbound -Action Allow -Profile Any -RemoteAddress LocalSubnet}
+ else{New-NetFirewallRule -Name $name -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Any -RemoteAddress LocalSubnet|Out-Null}
+ $sshFirewall=Get-SetupSSHFirewallStatus
+ if(-not $sshFirewall.Passed){throw $sshFirewall.Detail}
+}

@@ -8,6 +8,7 @@ Assert (Test-Path $library) '總驗收可由具名函式安全載入'
 . (Join-Path $root 'core/hardware.ps1')
 . (Join-Path $root 'core/verification.ps1')
 . $library
+. (Join-Path $root 'modules/ssh/ssh_firewall.ps1')
 $tokens=$null;$errors=$null
 $entry=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'core/verify_only.ps1'),[ref]$tokens,[ref]$errors)
 Assert (@($entry.FindAll({param($node) $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Invoke-SetupVerification'},$true)).Count -eq 1) '正式入口呼叫具名驗收彙整一次'
@@ -29,7 +30,7 @@ function Invoke-SetupGuiFreshVerification {param($PackageRoot,$Role)
  Invoke-FreshVerification -ScriptPath (Resolve-NucPath $(if($Role -eq 'Icons'){'desktop_icon_layout.ps1'}else{'apply_'+$Role.ToLowerInvariant()+'_settings.ps1'})) -ReportPath (Join-Path $env:ProgramData $(if($Role -eq 'Icons'){'NUC8-Setup/IconLayout-Result.json'}else{'NUC8-Setup/'+$Role+'-Verification.json'})) -Arguments @{VerifyOnly=$true}
 }
 function Get-CimInstance {param($ClassName,$Filter) [pscustomobject]@{State=$(if($global:AggregateFixtureMode -eq 'Throw'){'Stopped'}else{'Running'});StartMode='Auto'}}
-function Get-SetupSSHFirewallStatus {[pscustomobject]@{Passed=($global:AggregateFixtureMode -ne 'Throw');Detail='fixture'}}
+function Get-SetupSSHFirewallStatus {[pscustomobject]@{Passed=($global:AggregateFixtureMode -notin @('Throw','SSHOnlyFail'));Detail='fixture'}}
 function powercfg.exe {'AC Power Setting Index: 0x00000000'}
 function Get-ItemProperty {param($Path,$ErrorAction)
  $values=@{AutoAdminLogon='1';DefaultUserName=$env:USERNAME;SearchOnTaskbarMode=0;AllowNewsAndInterests=0;ShowTaskViewButton=0;Hidden=1;ShowSuperHidden=0}
@@ -60,12 +61,22 @@ try{
   $driverCheck=@($result.Checks|Where-Object Name -eq '已選驅動官方目標')
   Assert ($driverCheck.Count -eq 1 -and $driverCheck[0].Status -eq $(if($mode -in @('Pass','DebloatFeatureFailure')){'Passed'}else{'Failed'})) ('NUC已選包真正走freshdriver檢查而非被fixture誤略過 '+$mode)
   Assert (@($result.Checks|Where-Object Name -eq '非必要資料分享政策').Count -eq 1) ('保留隱私檢查 '+$mode)
+  $sshCheck=@($result.Checks|Where-Object Name -eq 'SSH 防火牆規則');Assert ($sshCheck.Count -eq 1 -and $sshCheck[0].Passed -eq ($mode -ne 'Throw') -and $sshCheck[0].Detail -ceq 'fixture') ('真實總驗收經具名入口保留 SSH 檢查 '+$mode)
   $mdnsCheck=@($result.Checks|Where-Object Name -eq 'mDNS 持續公告');Assert ($mdnsCheck.Count -eq 1 -and $mdnsCheck[0].Passed -eq $true) ('每輪真正fresh VerifyOnly公告檢查而非本機解析自證 '+$mode)
   $debloatCheck=@($result.Checks|Where-Object Name -eq '清理功能登錄讀回')
   Assert ($debloatCheck.Count -eq 1) ('每輪有真正Debloat功能fresh讀回 '+$mode)
   if($mode -eq 'DebloatFeatureFailure'){Assert ($debloatCheck[0].Status -eq 'Failed' -and @($result.Checks|Where-Object {$_.Status -eq 'Failed' -and $_.Name -ne '清理功能登錄讀回'}).Count -eq 0) 'Appx空且其他模組全通過時，僅功能讀回失敗就拒絕總成功'}
   $expected=@{Throw='fixture submodule failed';Missing='本輪驗證未產生結果';Stale='驗證結果不是本輪產生';WrongComputer='電腦或使用者不符';WrongUser='電腦或使用者不符'}
   if($expected.ContainsKey($mode)){$detail=($result.Checks|Where-Object Name -eq '非必要資料分享政策').Detail;Assert ($detail.Contains($expected[$mode])) ('失敗原因確實來自預期本輪拒絕 '+$mode)}
+ }
+ [IO.File]::WriteAllText((Join-Path $script:fixtureScripts 'apply_hosts_sync.ps1'), "param([switch]`$VerifyOnly); if(`$global:AggregateFixtureMode -eq 'HostsOnlyFail'){throw 'hosts fixture failure'}")
+ foreach($independentMode in @('HostsOnlyFail','SSHOnlyFail')){
+  $global:AggregateFixtureMode=$independentMode
+  Reject {Invoke-SetupVerification -Hardware $hardware -DriverPackagePath $fixture -VerificationRunId ([guid]::NewGuid().ToString())} ('aggregation rejects isolated failure '+$independentMode)
+  $independentResult=Get-Content (Resolve-NucPath 'Verification-Result.json') -Raw|ConvertFrom-Json
+  $hosts=@($independentResult.Checks|Where-Object Name -eq '依網路自動匯入框架')
+  $ssh=@($independentResult.Checks|Where-Object Name -eq 'SSH 防火牆規則')
+  Assert ($hosts.Count -eq 1 -and $ssh.Count -eq 1 -and $hosts[0].Passed -eq ($independentMode -ne 'HostsOnlyFail') -and $ssh[0].Passed -eq ($independentMode -ne 'SSHOnlyFail') -and $independentResult.UserSID -eq [Security.Principal.WindowsIdentity]::GetCurrent().User.Value) ('hosts and SSH failures remain independent with current user '+$independentMode)
  }
  foreach($desktopMode in @('HiddenDesktop','SystemDesktop')){
   $global:AggregateFixtureMode=$desktopMode

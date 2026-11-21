@@ -46,8 +46,7 @@ try{
  $uac=Invoke-FreshVerification -ScriptPath (Resolve-NucPath 'apply_uac_settings.ps1') -ReportPath (Join-Path $env:ProgramData 'NUC8-Setup/UAC-Result.json') -Arguments @{VerifyOnly=$true}
  Add-Check '管理員提權提示政策' $uac.Success 'EnableLUA仍為1；此電腦管理員自動核准提權。'
 }catch{Add-Check '管理員提權提示政策' $false $_.Exception.Message}
-$sshFirewall=Get-SetupSSHFirewallStatus
-Add-Check 'SSH 防火牆規則' $sshFirewall.Passed $sshFirewall.Detail
+Add-SetupSSHFirewallVerificationCheck
 foreach($setting in @('STANDBYIDLE','HIBERNATEIDLE')){
  $text=(& powercfg.exe /query SCHEME_CURRENT SUB_SLEEP $setting) -join "`n"
  $match=[regex]::Match($text,'(?im)^.*AC.*:\s*0x([0-9a-f]+)\s*$')

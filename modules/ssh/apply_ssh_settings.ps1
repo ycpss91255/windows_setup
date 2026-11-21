@@ -11,11 +11,7 @@ if($capability.State -ne 'Installed'){
 }
 Set-Service sshd -StartupType Automatic
 Start-Service sshd
-$name='OpenSSH-Server-In-TCP'
-if(Get-NetFirewallRule -Name $name -ErrorAction SilentlyContinue){Set-NetFirewallRule -Name $name -Protocol TCP -LocalPort 22 -Enabled True -Direction Inbound -Action Allow -Profile Any -RemoteAddress LocalSubnet}
-else{New-NetFirewallRule -Name $name -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Any -RemoteAddress LocalSubnet|Out-Null}
-$sshFirewall=Get-SetupSSHFirewallStatus
-if(-not $sshFirewall.Passed){throw $sshFirewall.Detail}
+Set-SetupSSHFirewallRule
 if((Get-Service sshd).Status -ne 'Running'){throw 'SSH 服務尚未正常啟動。'}
 Write-Host 'SSH 已啟動、設為自動啟動，防火牆僅允許本機子網路。' -ForegroundColor Green
 
