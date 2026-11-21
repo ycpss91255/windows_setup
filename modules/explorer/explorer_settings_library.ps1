@@ -1,8 +1,8 @@
 ﻿#Requires -Version 5.1
 # Definitions only; registry, shell and native work begins only in the named invocation.
 function Invoke-SetupExplorerNotification {
- if(-not ('NucExplorerRefresh' -as [type])){Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public static class NucExplorerRefresh{[DllImport("shell32.dll")]public static extern void SHChangeNotify(int e,uint f,IntPtr a,IntPtr b);}'}
- [NucExplorerRefresh]::SHChangeNotify(0x08000000,0,[IntPtr]::Zero,[IntPtr]::Zero)
+ if(-not ('WindowsSetupExplorerRefresh' -as [type])){Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public static class WindowsSetupExplorerRefresh{[DllImport("shell32.dll")]public static extern void SHChangeNotify(int e,uint f,IntPtr a,IntPtr b);}'}
+ [WindowsSetupExplorerRefresh]::SHChangeNotify(0x08000000,0,[IntPtr]::Zero,[IntPtr]::Zero)
 }
 function Get-SetupExplorerShellOptions {
  param([string]$ModuleRoot,[switch]$Apply)
