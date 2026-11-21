@@ -136,6 +136,7 @@
   "paths.json": "core/paths.json",
   "start_windows.ps1": "core/start_windows.ps1",
   "init_entry_library.ps1": "modules/init/init_entry_library.ps1",
+  "initialize_setup.ps1": "modules/init/initialize_setup.ps1",
   "initialize_nuc.ps1": "modules/init/initialize_nuc.ps1",
   "oobe_library.ps1": "modules/init/oobe_library.ps1",
   "cleanup_oobe.ps1": "modules/init/cleanup_oobe.ps1",
