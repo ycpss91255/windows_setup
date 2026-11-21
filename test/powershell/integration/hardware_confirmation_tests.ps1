@@ -27,7 +27,7 @@ foreach($file in @('core/configure_nuc.ps1','core/run_module.ps1','modules/drive
  Assert ($result.Board -eq $ConfirmedBoard -and $result.Computer -eq $ConfirmationComputer) ('真提權命令保留本機驅動確認：'+$file)
 }# Execute actual downstream invocation ASTs against a capture-only target.
 $forwardStub=Join-Path $fixture 'forward.ps1'
-[IO.File]::WriteAllText($forwardStub,'param($DriverPackagePath,$ConfirmedBoard,$ConfirmationComputer,[switch]$NonInteractive);[pscustomobject]@{Board=$ConfirmedBoard;Computer=$ConfirmationComputer;Path=$DriverPackagePath}',[Text.UTF8Encoding]::new($true))
+[IO.File]::WriteAllText($forwardStub,'param($DriverPackagePath,$ConfirmedBoard,$ConfirmationComputer,[switch]$NonInteractive);[pscustomobject]@{Board=$ConfirmedBoard;Computer=$ConfirmationComputer;Path=$DriverPackagePath;NonInteractive=[bool]$NonInteractive}',[Text.UTF8Encoding]::new($true))
 function Resolve-NucPath {param($Name);$forwardStub}
 $path=$forwardStub;$stage=@{File='install_drivers.ps1'};$file='install_drivers.ps1';$DriverPackagePath='dynamic_driver_path'
 foreach($relative in @('core/configure_nuc.ps1','core/run_module.ps1','core/verify_after_restart.ps1')){
@@ -36,8 +36,35 @@ foreach($relative in @('core/configure_nuc.ps1','core/run_module.ps1','core/veri
  if($relative -eq 'core/configure_nuc.ps1'){$combined=[IO.File]::ReadAllText((Join-Path $root $relative))+[IO.File]::ReadAllText((Join-Path $root 'core/configuration_library.ps1'));$ast=[Management.Automation.Language.Parser]::ParseInput($combined,[ref]$tokens,[ref]$errors)}
  if($relative -eq 'core/verify_after_restart.ps1'){$combined=[IO.File]::ReadAllText((Join-Path $root $relative))+[IO.File]::ReadAllText((Join-Path $root 'core/after_restart_library.ps1'));$ast=[Management.Automation.Language.Parser]::ParseInput($combined,[ref]$tokens,[ref]$errors)}
  $calls=@($ast.FindAll({param($a) $a -is [Management.Automation.Language.CommandAst] -and $a.InvocationOperator -eq 'Ampersand' -and ($a.Extent.Text -match '-DriverPackagePath|@driverArguments')},$true))
- Assert ($calls.Count -eq $(if($relative -eq 'core/verify_after_restart.ps1'){4}elseif($relative -eq 'core/configure_nuc.ps1'){2}else{1})) ('完整下游調用數：'+$relative)
+ Assert ($calls.Count -eq $(if($relative -eq 'core/verify_after_restart.ps1'){3}elseif($relative -eq 'core/configure_nuc.ps1'){2}else{1})) ('完整下游調用數：'+$relative)
  foreach($call in $calls){$result=& ([scriptblock]::Create($call.Extent.Text));Assert ($result.Board -eq 'NUC8i7HVB' -and $result.Computer -eq $env:COMPUTERNAME -and $result.Path -eq $DriverPackagePath) ('真下游呼叫傳遞型號與機器身分：'+$relative)}
+ if($relative -eq 'core/verify_after_restart.ps1'){
+  $preflight=@($calls|Where-Object {$_.Extent.Text.Contains("'test_setup_prerequisites.ps1'")})
+  $driver=@($calls|Where-Object {$_.Extent.Text.Contains("'install_drivers.ps1'")})
+  $shared=@($calls|Where-Object {$_.Extent.Text -match '(?i)Resolve-NucPath\s+\$file'})
+  Assert ($preflight.Count -eq 1 -and $driver.Count -eq 1 -and $shared.Count -eq 1) '驗證入口、獨立driver及共用轉送皆保留各自物理呼叫'
+  $entry=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-SetupAfterRestart'},$true)
+  $wiring=@($entry.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Invoke-SetupAfterRestartRetryDispatch'},$true))
+  Assert ($wiring.Count -eq 2) '原retry與cleanup保留兩個具名轉送接線'
+  . (Join-Path $root 'core/after_restart_library.ps1')
+  $loopOffsets=@()
+  foreach($call in $wiring){
+   $parentTry=$call.Parent
+   while($parentTry -and $parentTry -isnot [Management.Automation.Language.TryStatementAst]){$parentTry=$parentTry.Parent}
+   $parentLoop=if($parentTry){$parentTry.Parent}
+   while($parentLoop -and $parentLoop -isnot [Management.Automation.Language.ForEachStatementAst]){$parentLoop=$parentLoop.Parent}
+   Assert ($null -ne $parentTry -and $null -ne $parentLoop -and $null -ne $parentTry.Body.Find({param($n) $n -eq $call},$true)) '每個轉送位置都位於原foreach的try內'
+   $loopOffsets+=@($parentLoop.Extent.StartOffset)
+   $bound=@{};$elements=$call.CommandElements
+   for($index=1;$index -lt $elements.Count;$index++){$item=$elements[$index];if($item -isnot [Management.Automation.Language.CommandParameterAst]){continue};if($item.Argument){$bound[$item.ParameterName]=$item.Argument}else{$index++;$bound[$item.ParameterName]=$elements[$index]}}
+   $correct=$bound.Count -eq 3
+   foreach($pair in @(@('File','file'),@('DriverPackagePath','DriverPackagePath'),@('Confirmation','confirmation'))){$value=$bound[$pair[0]];if($value -isnot [Management.Automation.Language.VariableExpressionAst] -or $value.VariablePath.UserPath -ine $pair[1]){$correct=$false}}
+   Assert $correct '原轉送位置保留模組、路徑及確認變數接線'
+   $result=Invoke-SetupAfterRestartRetryDispatch -File $file -DriverPackagePath $DriverPackagePath -Confirmation $confirmation
+   Assert ($result.Board -eq 'NUC8i7HVB' -and $result.Computer -eq $env:COMPUTERNAME -and $result.Path -eq $DriverPackagePath -and $result.NonInteractive) '原轉送位置以固定TEMP替身核對完整driver確認'
+  }
+  Assert (@($loopOffsets|Select-Object -Unique).Count -eq 2) 'retry與cleanup是兩個不同迴圈'
+ }
 }
 # Rehydrate and evaluate the real verification profile assignments.
 function Resolve-NucPath {param($Name);$resultPath}

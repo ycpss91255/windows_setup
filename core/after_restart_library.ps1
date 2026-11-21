@@ -20,6 +20,10 @@ if($previous -and $previous.Computer -eq $env:COMPUTERNAME -and $previous.UserSI
 if($errors.Count -or -not $verification.Passed){throw '驗收尚未全部通過。請查看 Acceptance-Result.json；若要求重新開機，手動重開後再執行此入口。'}
 Write-Host '設定及清理驗收通過。請目視確認自動登入、工作列僅釘選 Edge ；NUC 適用時再確認無 AMD 位置提示。' -ForegroundColor Green
 }
+function Invoke-SetupAfterRestartRetryDispatch {
+ param([string]$File,[string]$DriverPackagePath,[hashtable]$Confirmation)
+ if($File -eq 'install_drivers.ps1'){& (Resolve-NucPath $File) -NonInteractive -DriverPackagePath $DriverPackagePath @Confirmation}elseif($File -eq 'apply_start_menu_settings.ps1'){& (Resolve-NucPath $File) -VerifyOnly|Out-Null}else{& (Resolve-NucPath $File)}
+}
 function Invoke-SetupAfterRestart {
  param($Hardware,[string]$DriverPackagePath,[hashtable]$Confirmation=@{},[object[]]$SkippedModules=@())
  $ErrorActionPreference='Stop'
@@ -63,10 +67,10 @@ foreach($file in $retryFiles){
    $decision=Get-SetupModuleDecision -Module $file -Hardware $hardware
    if(-not $decision.Applicable){Write-Host ('[略過] '+$decision.Reason);continue}
    Write-Host ('重試未完成模組：'+$file) -ForegroundColor Cyan
-   try{ if($file -eq 'install_drivers.ps1'){& (Resolve-NucPath $file) -NonInteractive -DriverPackagePath $DriverPackagePath @confirmation}elseif($file -eq 'apply_start_menu_settings.ps1'){& (Resolve-NucPath $file) -VerifyOnly|Out-Null}else{& (Resolve-NucPath $file)} }catch{$errors+=($file+'：'+$_.Exception.Message);$remaining+=$file;Write-Warning $errors[-1]}
+   try{ Invoke-SetupAfterRestartRetryDispatch -File $file -DriverPackagePath $DriverPackagePath -Confirmation $confirmation }catch{$errors+=($file+'：'+$_.Exception.Message);$remaining+=$file;Write-Warning $errors[-1]}
 }
 foreach($file in @('apply_debloat.ps1','apply_copilot_settings.ps1','remove_setup_residue.ps1')){
- try{ if($file -eq 'install_drivers.ps1'){& (Resolve-NucPath $file) -NonInteractive -DriverPackagePath $DriverPackagePath @confirmation}elseif($file -eq 'apply_start_menu_settings.ps1'){& (Resolve-NucPath $file) -VerifyOnly|Out-Null}else{& (Resolve-NucPath $file)} }catch{$errors+=($file+'：'+$_.Exception.Message);$remaining+=$file;Write-Warning $errors[-1]}
+ try{ Invoke-SetupAfterRestartRetryDispatch -File $file -DriverPackagePath $DriverPackagePath -Confirmation $confirmation }catch{$errors+=($file+'：'+$_.Exception.Message);$remaining+=$file;Write-Warning $errors[-1]}
 }
 if($previous -and $previous.Computer -eq $env:COMPUTERNAME -and $previous.UserSID -eq $sid){
  $previous|Add-Member -NotePropertyName HardwareProfile -NotePropertyValue $hardware -Force
