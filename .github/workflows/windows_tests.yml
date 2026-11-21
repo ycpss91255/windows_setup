@@ -178,6 +178,7 @@ jobs:
       - name: 取得原始碼
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: 準備固定 Go 覆蓋率工具鏈
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
@@ -213,6 +214,10 @@ jobs:
         if: always()
         run: |
           & .\script\test\create_portal_fixture.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'requirements-fixture')
+      - name: 核對本次新增合併提交標題
+        run: |
+          . .\script\test\ci_tasks.ps1
+          Invoke-CINative -File go.exe -Arguments @('run','./script/test/commitlint/mergecheck')
       - name: 執行全部 Go 維護工具測試
         env:
           WINDOWS_SETUP_ARTIFACT_DIR: ${{ runner.temp }}/NUC-CI-Results/public

@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "repository": "ycpss91255/windows_setup",
+  "anchor": "242d21a56c6b645ab8f5767aa27c36e8490a48a4",
+  "sample1_utc": "2026-11-14T23:50:13.6903942Z",
+  "sample2_utc": "2026-11-14T23:51:07.1880846Z",
+  "source": "GitHub REST open pull requests and main branch; two matching samples",
+  "pull_requests": [
+    {
+      "number": 206,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "fix/issue195_release_notes",
+      "head_sha": "6281257f53b08873050a8330ef1f1e9994dfaa3f"
+    },
+    {
+      "number": 208,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "fix/issue130_artifact_retry",
+      "head_sha": "09d4d9c840ce9c3cd2e67ef27783062f5fd845fd"
+    },
+    {
+      "number": 209,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "test/issue181-entry-boundary",
+      "head_sha": "492a0536a4159d33ae7c712be95dd3178f9718b7"
+    },
+    {
+      "number": 210,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "feature/issue204_hosted_cache_diagnostic",
+      "head_sha": "d742af79cf76bb0c309fd80e37c8111050ee319c"
+    },
+    {
+      "number": 214,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "fix/issue157_pages_visibility_actual",
+      "head_sha": "51bf81cbc02296cccc8985c81016b3270fdec0a9"
+    },
+    {
+      "number": 217,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "feature/issue156_source_preflight",
+      "head_sha": "e0ddf4ae887bad325158937221340cf38c5ba163"
+    },
+    {
+      "number": 220,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "feature/issue219_actions_timing",
+      "head_sha": "c35cfebd356db5597a96a039798dfe2e10e011b3"
+    },
+    {
+      "number": 236,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "docs/issue232_runtime_badge",
+      "head_sha": "5accac89658e0f24948279d80be297bbb890e909"
+    },
+    {
+      "number": 237,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "feature/issue234_ssh_behavior",
+      "head_sha": "2a638d08ff41234973c8eb372eeac16f7da7e489"
+    },
+    {
+      "number": 240,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "feature/issue226_audit_entry",
+      "head_sha": "2dea7cc8e10039b6f3ccd20aa36e470e5fc51890"
+    },
+    {
+      "number": 241,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "style/issue225_pssa_first",
+      "head_sha": "afcebd18dbb9b970d2eb02d7ab73ab834514db1c"
+    },
+    {
+      "number": 244,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "issue228_readme_guide",
+      "head_sha": "7ed940e02b19a96a42e3b66006a1eed1ceab4ac3"
+    },
+    {
+      "number": 245,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "feature/issue234_verification_finalization",
+      "head_sha": "2f0decdcae6aa049a9da8e21256aa75420afa00c"
+    },
+    {
+      "number": 247,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "issue234_driver_preflight",
+      "head_sha": "a6dedd77181e8b378040ca4d47b2978770e8873b"
+    },
+    {
+      "number": 249,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "fix/issue234_desktop_safety",
+      "head_sha": "1914b6ec1b4544b17c235ef40e4ebea16d809233"
+    },
+    {
+      "number": 250,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "fix/issue234_one_drive_entry",
+      "head_sha": "2736a7dce8fbd2aa461497a3cb14484cc12b8bcc"
+    },
+    {
+      "number": 251,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "issue234_continuation_final",
+      "head_sha": "d3adc2944ce87d0983c108db94328991628a1386"
+    },
+    {
+      "number": 253,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "fix/issue234_start_dispatch",
+      "head_sha": "d616250f94e1948f169807328affe01016f5eba2"
+    },
+    {
+      "number": 255,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "feature/issue212_wrapper_main_integrated",
+      "head_sha": "63e27bf6cd9c806277de6e11557618baca486fcd"
+    },
+    {
+      "number": 256,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "feature/issue254_caller_identity_green",
+      "head_sha": "3edc2b2410fb498ca53805788eb17cb6e23ab2e4"
+    },
+    {
+      "number": 268,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "issue230_candidate_6435",
+      "head_sha": "ae61c4c33ddb377be2b4b40fd3dcb89fffbf6d5b"
+    },
+    {
+      "number": 269,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "issue221_runtime_0ea21327",
+      "head_sha": "5c6e4020337d8698f954de81aaa0052b96044f34"
+    },
+    {
+      "number": 271,
+      "head_repo": "ycpss91255/windows_setup",
+      "head_ref": "fix/issue270_afterrestart_boundary",
+      "head_sha": "ef138bbe26e4ecf794ab99ca3c5858901c96b53a"
+    }
+  ]
+}
