@@ -619,6 +619,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      contents: read
       actions: read
       pages: write
       id-token: write
@@ -629,19 +630,49 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: 取得本次來源
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: 準備固定 Go 工具鏈
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: '1.27.3'
+          cache: false
       - name: 下載已驗證的品質入口
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: quality-portal-${{ github.run_id }}-${{ github.run_attempt }}
           path: portal
-      - name: 準備 Pages artifact
-        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+      - name: 封裝 Pages artifact
+        shell: bash
+        run: |
+          tar --dereference --hard-dereference --directory portal -cvf "$RUNNER_TEMP/artifact.tar" --exclude=.git --exclude=.github .
+      - name: 上傳 Pages artifact
+        id: pages_artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          path: portal
+          path: ${{ runner.temp }}/artifact.tar
+          name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 7
+          if-no-files-found: error
+      - name: 核對同次 Pages 工件可見性
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.0.1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES_ARTIFACT_ID: ${{ steps.pages_artifact.outputs.artifact-id }}
+          PAGES_ARTIFACT_DIGEST: ${{ steps.pages_artifact.outputs.artifact-digest }}
+          GOTOOLCHAIN: local
+          GOPROXY: 'off'
+          GOSUMDB: 'off'
+        with:
+          script: |
+            require('child_process').execFileSync('go', ['run', '-mod=vendor', './script/test/pages_artifact_visibility'], {stdio:'inherit'})
       - name: 發布 Pages
         id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+        with:
+          artifact_name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
   verify-deployment:
     name: 公開部署需求驗收
     needs: [publish-reports]
