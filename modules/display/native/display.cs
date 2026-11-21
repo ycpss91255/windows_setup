@@ -1,6 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
-namespace NUC8Display {
+namespace WindowsSetupDisplay {
  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
  public struct Mode {
   [MarshalAs(UnmanagedType.ByValTStr,SizeConst=32)] public string dmDeviceName;

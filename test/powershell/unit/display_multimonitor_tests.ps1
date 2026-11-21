@@ -4,7 +4,7 @@ $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
 $source=Get-Content -Raw (Join-Path $root 'modules/display/native/display.cs')
 $source=$source.Replace('new NativeApi()','DisplayFixture.Api()')
 $fixture=@'
-namespace NUC8Display {
+namespace WindowsSetupDisplay {
  public static class DisplayFixture {
   public static int[] Steps={-2,0}; public static bool Fail; public static int Queries;
   internal static Display.NativeApi Api(){
@@ -25,14 +25,14 @@ function Get-ItemProperty {param($Path,$ErrorAction) [pscustomobject]@{Win8DpiSc
 function Assert([bool]$condition,[string]$name){Write-Host ('@@ASSERT@@'+(@{Name=$name;Passed=$condition}|ConvertTo-Json -Compress));if(-not $condition){throw $name}}
 $module=Join-Path $root 'modules/display'
 foreach($case in @(@{Steps=@(-2,0);Success=$false},@{Steps=@(0,-2);Success=$false},@{Steps=@(-2,-2);Success=$true},@{Steps=@(-2);Success=$true})){
- [NUC8Display.DisplayFixture]::Steps=$case.Steps;[NUC8Display.DisplayFixture]::Queries=0
+ [WindowsSetupDisplay.DisplayFixture]::Steps=$case.Steps;[WindowsSetupDisplay.DisplayFixture]::Queries=0
  $r=Invoke-SetupDisplaySettings -ModuleRoot $module -VerifyOnly
- Assert ($r.Success -eq $case.Success -and [NUC8Display.DisplayFixture]::Queries -eq 1) ('VerifyOnly validates every source in one query: '+($case.Steps -join ','))
+ Assert ($r.Success -eq $case.Success -and [WindowsSetupDisplay.DisplayFixture]::Queries -eq 1) ('VerifyOnly validates every source in one query: '+($case.Steps -join ','))
  if($case.Steps.Count -gt 1 -and $case.Steps[0] -ne $case.Steps[1]){
   Assert ($null -eq $r.CurrentMonitorDPI -and $null -eq $r.CurrentScalePercent) 'mixed source scales do not claim a current monitor DPI or scale'
  }else{
   Assert ($r.CurrentMonitorDPI -eq 96 -and $r.CurrentScalePercent -eq 100) 'uniform source scales retain compatible values'
  }
 }
-[NUC8Display.DisplayFixture]::Fail=$true;$failed=$false;try{Invoke-SetupDisplaySettings -ModuleRoot $module -VerifyOnly|Out-Null}catch{$failed=$true};Assert $failed 'native failure rejects verification'
-[NUC8Display.DisplayFixture]::Fail=$false;[NUC8Display.DisplayFixture]::Steps=@();$failed=$false;try{Invoke-SetupDisplaySettings -ModuleRoot $module -VerifyOnly|Out-Null}catch{$failed=$true};Assert $failed 'empty active sources reject verification'
+[WindowsSetupDisplay.DisplayFixture]::Fail=$true;$failed=$false;try{Invoke-SetupDisplaySettings -ModuleRoot $module -VerifyOnly|Out-Null}catch{$failed=$true};Assert $failed 'native failure rejects verification'
+[WindowsSetupDisplay.DisplayFixture]::Fail=$false;[WindowsSetupDisplay.DisplayFixture]::Steps=@();$failed=$false;try{Invoke-SetupDisplaySettings -ModuleRoot $module -VerifyOnly|Out-Null}catch{$failed=$true};Assert $failed 'empty active sources reject verification'
