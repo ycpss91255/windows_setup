@@ -822,9 +822,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\script\release\build_s
 
 ### 檔名與舊版相容性
 
-本專案的自有檔案統一小寫 snake_case，例如 `init.cmd`、`windows.cmd`、`script/test/run_ci.ps1`；Windows 不分大小寫不代表 Linux／GitHub 也能接受舊拼法。`agents.md` 也依此命名，部分工具不再自動發現原本大寫 AGENTS.md 的規範，維護時須主動讀取本檔。
+本專案的自有檔案統一小寫 snake_case，例如 `init.cmd`、`windows.cmd`、`script/test/run_ci.ps1`；新增通用流程的檔案與函式採中性 setup 命名，NUC 字樣用於 NUC8 硬體專屬邏輯。Windows 不分大小寫不代表 Linux／GitHub 也能接受舊拼法。`agents.md` 也依此命名，部分工具不再自動發現原本大寫 AGENTS.md 的規範，維護時須主動讀取本檔。
 
-第三方 Win11Debloat 原始碼、授權及供應的 Autologon／驅動封存檔保留原始檔名，不改上游契約或內容。既有每機報告、排程 worker、ProgramData 目錄與系統固定名稱也保留既有契約，避免失去續跑資料；這些不是新的儲存庫原始檔。舊報告內的模組檔名會映射到新的腳本名稱，仍檢查同一電腦與使用者，不代表允許沿用他機結果。請用新版入口，不另保留重複的舊檔名腳本。
+第三方 Win11Debloat 原始碼、授權及供應的 Autologon／驅動封存檔保留原始檔名，不改上游契約或內容。既有每機報告、排程 worker、ProgramData 目錄與系統固定名稱也保留既有契約，避免失去續跑資料；這些不是新的儲存庫原始檔。舊報告內的模組檔名會映射到新的腳本名稱，仍檢查同一電腦與使用者，不代表允許沿用他機結果。請用新版入口；必要時保留舊入口轉接或名稱映射，以支援既有部署與續跑。為相容既有續跑及避免重複程序，沿用 RunOnce `NUC8FinalizeTaskbar`、互斥鎖 `Local\NUC8TerminalHotkey`／`Global\CustomHostsSync-NUC` 與初始化所有權標記 `NUC-INIT-`（後接識別碼），不另建新名稱。防火牆規則 `NUC8-LAN-Ping-v4`／`NUC8-LAN-Ping-v6` 及其 `NUC LAN Ping ICMPv4`／`NUC LAN Ping ICMPv6` 顯示名稱維持不變，不建立另一套新名稱。
 
 ### 自動需求驗收與獨立審查
 

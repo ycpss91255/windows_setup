@@ -30,6 +30,7 @@
 ## 編碼與架構
 
 - PowerShell 腳本維持 UTF-8 BOM，以相容 Windows PowerShell 5.1；SSH 設定檔使用 UTF-8 無 BOM。自有目錄使用小寫與底線，第三方內容保留上游原名與授權。
+- 新增自有通用流程的檔案與函式採中性 setup 命名；NUC 字樣用於 NUC8 硬體專屬邏輯。既有部署相容所需的舊入口轉接或名稱映射可以保留。
 - 每個設定模組可獨立執行，一鍵入口依序呼叫；新增檢查須如實回報失敗。
 - `core`／`modules` 是 Windows 執行樹；`script/test`、`script/release`、`script/package` 是維護工具；`test/powershell` 與 `test/go` 放分層案例。Go 模組僅管理維護工具，一般 Windows 使用者不需安裝 Go。
-- 依賴只能由維護工具與案例指向 runtime；runtime 不得引用 `script`、`test`、`.github`。既有 ProgramData 與排程工作識別保留，避免破壞續跑與部署。
+- 依賴只能由維護工具與案例指向 runtime；runtime 不得引用 `script`、`test`、`.github`。既有 ProgramData、排程工作、防火牆規則、RunOnce、互斥鎖與初始化所有權標記識別保留，避免破壞續跑與部署；沿用 `NUC8-LAN-Ping-v4`／`NUC8-LAN-Ping-v6` 及 `NUC LAN Ping ICMPv4`／`NUC LAN Ping ICMPv6` 顯示名稱。
