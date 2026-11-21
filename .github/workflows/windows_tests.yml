@@ -67,6 +67,18 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+      - name: 準備固定的 PowerShell 格式檢查套件
+        timeout-minutes: 3
+        shell: powershell
+        run: |
+          . .\script\docker\install_managed_tools.ps1
+          $artifact = Get-ContainerPSScriptAnalyzerArtifact
+          $package = Join-Path $env:RUNNER_TEMP 'psscriptanalyzer.1.24.0.zip'
+          Install-ContainerToolArtifact -Artifact $artifact -Destination $package -ArchiveDirectory (Join-Path $env:RUNNER_TEMP 'pssa-download')
+          $env:WINDOWS_SETUP_PSSA_PACKAGE_PATH = $package
+          .\test\powershell\support\pssa_format_contract.ps1
+          .\script\test\check_pssa_format.ps1 -SourceRoot $PWD.Path -PackagePath $package
+          .\test\powershell\support\pssa_step_exit_contract.ps1
       - name: 檢查設定包三檔來源與實際雜湊
         shell: powershell
         run: |

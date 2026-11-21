@@ -13,6 +13,9 @@ try {
  $env:GIT_OPTIONAL_LOCKS='0'
  $env:WINDOWS_SETUP_TEST_CONTEXT='Windows container'
  Set-Location C:/workspace
+ & C:/workspace/test/powershell/support/pssa_format_contract.ps1
+ & C:/workspace/script/test/check_pssa_format.ps1 -SourceRoot C:/workspace -PackagePath $env:WINDOWS_SETUP_PSSA_PACKAGE_PATH
+ & C:/workspace/test/powershell/support/pssa_step_exit_contract.ps1
  . C:/workspace/script/docker/acceptance.ps1
  Initialize-ContainerGoEnvironment -SourceRoot C:/workspace -CacheRoot (Join-Path $env:TEMP ('container_go_'+[guid]::NewGuid().ToString('N')))
  $fixture=Join-Path $env:TEMP ('container_acceptance_'+[guid]::NewGuid().ToString('N'))
