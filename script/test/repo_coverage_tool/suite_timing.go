@@ -237,3 +237,31 @@ func assertStableTimingInput(validatedManifest, currentManifest, worker []byte, 
 	}
 	return nil
 }
+
+// Call only after MergePowerShellShards has validated the captured input.
+func verifiedShardContexts(input rc.PowerShellShardInput, dir string) (rc.PowerShellShardManifest, []rc.PowerShellWorkerContext, error) {
+	var m rc.PowerShellShardManifest
+	b, err := readShardFile(dir, "shard.json")
+	if err != nil {
+		return m, nil, err
+	}
+	if err = decodeShardManifest(b, &m); err != nil {
+		return m, nil, err
+	}
+	var contexts []rc.PowerShellWorkerContext
+	for _, w := range m.Workers {
+		worker, e := readShardFile(dir, w.Evidence)
+		if e != nil {
+			return m, nil, e
+		}
+		if e = assertStableTimingInput(input.Manifest, b, worker, w.SHA256); e != nil {
+			return m, nil, e
+		}
+		var native struct{ Context *rc.PowerShellWorkerContext }
+		if e = json.Unmarshal(worker, &native); e != nil || native.Context == nil {
+			return m, nil, fmt.Errorf("missing worker context")
+		}
+		contexts = append(contexts, *native.Context)
+	}
+	return m, contexts, nil
+}

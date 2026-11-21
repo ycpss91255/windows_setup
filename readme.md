@@ -636,6 +636,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/test/verify_clien
 
 原生完整測試、Go 維護工具測試與四片 PowerShell 量測平行執行。聚合核對本次提交、執行 ID、attempt 與來源雜湊後，結合 C# 量測，產生 runtime 覆蓋率及正式報告。
 
+維護者可用離線工具分析同次 suite 計時。準備對應量測提交的乾淨 checkout、由該來源產生的完整 baseline manifest、四個原始分片附件組成的專用目錄，以及同次聚合的 `timing.json`，再從工具來源執行。各次 run 應分別核對、分別模擬，不混合不同次收據：
+
+```powershell
+go run -mod=vendor ./script/test/repo_coverage_tool powershell-timing-simulate `
+  --runtime --source-root <量測來源目錄> --manifest <完整基線清單> `
+  --expected-sha <量測提交> --expected-run-url <Actions執行網址> --run-attempt <次數> `
+  --shard-count 4 --input-dir <四片附件目錄> --timing-file <同次完整timing.json>
+```
+
+輸出列出工具執行檔雜湊與可用建置資訊，另記量測提交、執行網址與 attempt；對照清單保留 suite 路徑、雜湊和引擎。原分片及 worker 證據必須通過完整來源與身分核對，計時缺漏或不符即停止。結果比較現行 modulo 四片與依工作量排序的四／八片候選，保留各片 suite 順序；批次模型依目前 collector 每批最多兩個 worker、等待整批結束後才進入下一批。它只計三個 worker 階段，不包含程序啟動、工作設定、聚合或排隊，並非實際牆鐘或效益保證。正式四片及所有測試門檻不因模擬變更。缺少工作時間與依賴資料時，工具將完整關鍵路徑標為不可用。
+
 ```mermaid
 flowchart LR
   native["原生 All ＋全部 Go 測試"] --> aggregate["同次證據聚合＋C#／PowerShell runtime 八成"]

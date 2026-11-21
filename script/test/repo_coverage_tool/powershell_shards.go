@@ -498,29 +498,11 @@ func powershellShardMerge(args []string, out io.Writer) error {
 		var receipts []timingReceipt
 		for inputIndex, entry := range entries {
 			dir := filepath.Join(o.input, entry.Name())
-			b, e := readShardFile(dir, "shard.json")
+			m, shardContexts, e := verifiedShardContexts(inputs[inputIndex], dir)
 			if e != nil {
 				return e
 			}
-			mBytes := b
-			var m rc.PowerShellShardManifest
-			if e = decodeShardManifest(b, &m); e != nil {
-				return e
-			}
-			for _, worker := range m.Workers {
-				b, e = readShardFile(dir, worker.Evidence)
-				if e != nil {
-					return e
-				}
-				var native struct{ Context *rc.PowerShellWorkerContext }
-				if e = assertStableTimingInput(inputs[inputIndex].Manifest, mBytes, b, worker.SHA256); e != nil {
-					return e
-				}
-				if e = json.Unmarshal(b, &native); e != nil || native.Context == nil {
-					return fmt.Errorf("missing worker context")
-				}
-				contexts = append(contexts, *native.Context)
-			}
+			contexts = append(contexts, shardContexts...)
 			timingName := fmt.Sprintf("powershell-timing-%s-%d-%d", filepath.Base(o.runURL), o.attempt, m.ShardIndex)
 			timingDir := filepath.Join(o.timingInput, timingName)
 			info, e := os.Lstat(timingDir)
@@ -531,7 +513,7 @@ func powershellShardMerge(args []string, out io.Writer) error {
 			if e != nil {
 				return e
 			}
-			b, e = readTimingRegular(filepath.Join(timingDir, "timing.json"), limit)
+			b, e := readTimingRegular(filepath.Join(timingDir, "timing.json"), limit)
 			if e != nil {
 				return e
 			}
