@@ -242,3 +242,29 @@ function Select-SetupDriverRequest {
  if(-not $DriverPackagePath){$ConfirmedBoard='';$ConfirmationComputer='';$hardware=Get-SetupHardwareProfile}
  [pscustomobject]@{Hardware=$hardware;DriverPackagePath=$DriverPackagePath;ConfirmedBoard=$ConfirmedBoard;ConfirmationComputer=$ConfirmationComputer}
 }
+
+function Get-SetupDriverPreflight {
+ param([Parameter(Mandatory=$true)][string]$PackageRoot,[string]$DriverPackagePath,[switch]$PathSpecified,
+  [switch]$PackageOnly,[string]$ConfirmedBoard,[string]$ConfirmationComputer,[switch]$NonInteractive,[switch]$VerifyOnly)
+ if($PackageOnly -and -not $DriverPackagePath){
+  return [pscustomobject]@{Disposition='NoPackage';Result=[pscustomobject]@{Applicable=$false;Status='Skipped';Reason='未指定獨立驅動包，略過離線驗包。'}}
+ }
+ if(-not $PackageOnly){
+  $request=Select-SetupDriverRequest -PackageRoot $PackageRoot -DriverPackagePath $DriverPackagePath -PathSpecified:$PathSpecified -ConfirmedBoard $ConfirmedBoard -ConfirmationComputer $ConfirmationComputer -Interactive:((Test-SetupInteractiveHost) -and -not $NonInteractive -and -not $VerifyOnly)
+  $DriverPackagePath=$request.DriverPackagePath;$ConfirmedBoard=$request.ConfirmedBoard;$ConfirmationComputer=$request.ConfirmationComputer
+ }
+ if($PackageOnly){
+  $identity=Get-Content -LiteralPath (Join-Path $DriverPackagePath 'package.json') -Raw -Encoding UTF8 -ErrorAction Stop|ConvertFrom-Json
+  $board='NUC8i7HVB'
+  if($identity.SchemaVersion -eq 2){
+   $profile=Get-SetupDriverProfile -ProfileId $identity.ProfileId
+   if(-not $profile){throw '獨立包指定的機型不在可信設定檔清單。'}
+   $board=$profile.SupportedBoards[0]
+  }
+  $hardware=Get-SetupHardwareProfile -BoardProduct $board -DriverPackagePath $DriverPackagePath
+ }else{$hardware=Get-SetupHardwareProfile -DriverPackagePath $DriverPackagePath -ConfirmedBoard $ConfirmedBoard -ConfirmationComputer $ConfirmationComputer}
+ $decision=Get-SetupModuleDecision -Module 'install_drivers.ps1' -Hardware $hardware
+ if(-not $decision.Applicable){return [pscustomobject]@{Disposition='NotApplicable';Decision=$decision}}
+ $payload=Test-SetupDriverPayload -Hardware $hardware -DriverPackagePath $DriverPackagePath
+ [pscustomobject]@{Disposition='Ready';DriverPackagePath=$DriverPackagePath;ConfirmedBoard=$ConfirmedBoard;ConfirmationComputer=$ConfirmationComputer;Hardware=$hardware;Decision=$decision;Payload=$payload}
+}

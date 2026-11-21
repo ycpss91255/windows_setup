@@ -15,7 +15,9 @@ function Get-SetupHardwareProfile {[pscustomobject]@{IsNuc8=$true}}
 function Get-SetupModuleDecision {[pscustomobject]@{Applicable=$true}}
 function Test-SetupDriverPayload {[pscustomobject]@{Status='Passed'}}
 '@
-[IO.File]::WriteAllText((Join-Path $fixture 'core/hardware.ps1'),$hardware,$utf)
+$hardwarePath=Join-Path $fixture 'core/hardware.ps1'
+Copy-Item -LiteralPath (Join-Path $root 'core/hardware.ps1') -Destination $hardwarePath
+[IO.File]::AppendAllText($hardwarePath,"`n"+$hardware,$utf)
 $library=@'
 function Invoke-SetupDriverInstallation {throw 'CLI fixture forbids install'}
 function Invoke-SetupDriverVerification {param($DriverRoot,$VerificationRunId) @{Root=$DriverRoot;Run=$VerificationRunId;Success=$true}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $PSScriptRoot 'called.json') -Encoding UTF8;[pscustomobject]@{Success=$true}}

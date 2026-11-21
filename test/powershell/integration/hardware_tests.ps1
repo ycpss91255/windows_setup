@@ -4,6 +4,23 @@ $packageRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..'))
 . (Join-Path $packageRoot 'core\hardware.ps1')
 $count=0
 function Assert([bool]$Condition,[string]$Message){Write-Host ('@@ASSERT@@'+(@{Name=$Message;Passed=$Condition}|ConvertTo-Json -Compress));if(-not $Condition){throw ('FAIL: '+$Message)};$script:count++;Write-Host ('PASS: '+$Message)}
+$preflightFixture=& {
+ $calls=New-Object 'System.Collections.Generic.List[string]';$state=@{Applicable=$true;Specified=$null;Interactive=$null}
+ function Test-SetupInteractiveHost {$null=$calls.Add('interactive');return $true}
+ function Select-SetupDriverRequest {param($PackageRoot,$DriverPackagePath,[switch]$PathSpecified,$ConfirmedBoard,$ConfirmationComputer,[bool]$Interactive);$null=$calls.Add('select');$state.Specified=[bool]$PathSpecified;$state.Interactive=$Interactive;[pscustomobject]@{DriverPackagePath=$DriverPackagePath;ConfirmedBoard=$ConfirmedBoard;ConfirmationComputer=$ConfirmationComputer}}
+ function Get-SetupHardwareProfile {param($BoardProduct,$DriverPackagePath,$ConfirmedBoard,$ConfirmationComputer);$null=$calls.Add('hardware');[pscustomobject]@{DriverBoard=$ConfirmedBoard;BoardProduct=''}}
+ function Get-SetupModuleDecision {param($Module,$Hardware);$null=$calls.Add('decision');[pscustomobject]@{Applicable=$state.Applicable;Reason='fixture'}}
+ function Test-SetupDriverPayload {param($Hardware,$DriverPackagePath);$null=$calls.Add('payload');[pscustomobject]@{Status='Passed'}}
+ $ready=Get-SetupDriverPreflight -PackageRoot $env:TEMP -DriverPackagePath '' -PathSpecified -NonInteractive -ConfirmedBoard 'NUC8i7HNB' -ConfirmationComputer 'fixture'
+ $readyOrder=$calls -join ',';$explicit=$state.Specified;$interactive=$state.Interactive;$calls.Clear()
+ $state.Applicable=$false;$skipped=Get-SetupDriverPreflight -PackageRoot $env:TEMP -DriverPackagePath '' -VerifyOnly
+ $skipOrder=$calls -join ',';$omitted=$state.Specified;$verifyInteractive=$state.Interactive;$calls.Clear()
+ $none=Get-SetupDriverPreflight -PackageRoot $env:TEMP -PackageOnly
+ [pscustomobject]@{Ready=$ready;ReadyOrder=$readyOrder;Explicit=$explicit;Interactive=$interactive;Skipped=$skipped;SkipOrder=$skipOrder;Omitted=$omitted;VerifyInteractive=$verifyInteractive;None=$none;NoneCalls=$calls.Count}
+}
+Assert ($preflightFixture.Ready.Disposition -ceq 'Ready' -and $preflightFixture.ReadyOrder -ceq 'interactive,select,hardware,decision,payload' -and $preflightFixture.Explicit -and -not $preflightFixture.Interactive) '前置函式保留明確空路徑及非互動選擇與驗包順序'
+Assert ($preflightFixture.Skipped.Disposition -ceq 'NotApplicable' -and $preflightFixture.SkipOrder -ceq 'interactive,select,hardware,decision' -and -not $preflightFixture.Omitted -and -not $preflightFixture.VerifyInteractive) '未指定路徑和VerifyOnly不互動，非適用時不驗payload'
+Assert ($preflightFixture.None.Disposition -ceq 'NoPackage' -and $preflightFixture.NoneCalls -eq 0) 'PackageOnly無包直接略過且不偵測硬體'
 $generic=Get-SetupHardwareProfile -BoardProduct 'Other Board' -UICulture 'en-US'
 $hv=Get-SetupHardwareProfile -BoardProduct 'NUC8i7HVB' -UICulture 'zh-TW' -DriverPackagePath 'selected_package'
 $hn=Get-SetupHardwareProfile -BoardProduct 'NUC8i7HNB' -UICulture 'zh-TW' -DriverPackagePath 'selected_package'
@@ -117,16 +134,30 @@ Assert ($exportResult.Count -eq 4 -and (Test-Path (Join-Path $exported 'install.
 $standalone=& (Join-Path $exported 'modules\drivers\install_drivers.ps1') -DriverPackagePath $exported -PackageOnly
 Assert ($standalone.Status -eq 'Passed') '獨立包只用自身 helper 完成唯讀驗證'
 Assert (-not(Test-Path (Join-Path $exported 'script')) -and -not(Test-Path (Join-Path $exported 'test')) -and -not(Test-Path (Join-Path $exported '.github'))) '獨立包不攜帶維護工具且已獨立執行驗證'
-# Exercise the exported installer's actual pre-install selection and payload checks.
-$exportSource=[IO.File]::ReadAllText((Join-Path $exported 'modules/drivers/install_drivers.ps1'))
-$exportPrefix=$exportSource.Substring(0,$exportSource.IndexOf('$principal='))
-$tokens=$null;$errors=$null;$exportAst=[Management.Automation.Language.Parser]::ParseInput($exportPrefix,[ref]$tokens,[ref]$errors)
-$exportBody=$exportPrefix.Remove($exportAst.ParamBlock.Extent.StartOffset,$exportAst.ParamBlock.Extent.Text.Length).Replace('$PSScriptRoot','$exportScriptRoot')
-$exportScriptRoot=Join-Path $exported 'modules/drivers';$DriverPackagePath=$exported;$PackageOnly=$false;$NonInteractive=$true;$ConfirmedBoard='NUC8i7HNB';$ConfirmationComputer=$env:COMPUTERNAME
+$installer=Join-Path $exported 'modules/drivers/install_drivers.ps1'
+$skipWithoutDetection=& {function Get-CimInstance {throw 'PackageOnly must not detect hardware'};& $installer -PackageOnly}
+Assert ($skipWithoutDetection.Status -ceq 'Skipped') '匯出安裝入口無包PackageOnly直接略過且不偵測'
+foreach($case in @('manual','verify')){
+ $guard='';try{if($case -eq 'manual'){& $installer -PackageOnly -ConfirmedBoard 'NUC8i7HNB'|Out-Null}else{& $installer -PackageOnly -VerifyOnly|Out-Null}}catch{$guard=$_.Exception.Message}
+ Assert (($case -eq 'manual' -and $guard -match '不可混用手動') -or ($case -eq 'verify' -and $guard -match '不可混用')) ('匯出入口先拒絕PackageOnly互斥參數 '+$case)
+}
+$badPackage=Join-Path $fixture 'untrusted-profile';New-Item -ItemType Directory -Path $badPackage|Out-Null
+@{SchemaVersion=2;ProfileId='unknown_fixture'}|ConvertTo-Json|Set-Content (Join-Path $badPackage 'package.json') -Encoding UTF8
+$badProfileError=& {function Get-CimInstance {throw 'unexpected CIM'};try{& $installer -PackageOnly -DriverPackagePath $badPackage|Out-Null;return ''}catch{return $_.Exception.Message}}
+Assert ($badProfileError -match '不在可信設定檔清單') '未知機型在任何硬體偵測之前遭拒絕'
+# Exercise the same named preflight used by the exported installer.
+. (Join-Path $exported 'core/hardware.ps1')
 function Get-CimInstance {param($ClassName,$ErrorAction);[pscustomobject]@{Product=''}}
-$bound=@{DriverPackagePath=$exported}
-. ([scriptblock]::Create($exportBody.Replace('$PSBoundParameters','$bound')))
-Assert ($hardware.DriverBoard -eq 'NUC8i7HNB' -and $hardware.BoardProduct -eq '' -and $payload.Status -eq 'Passed') '匯出包真安裝前綴可獨立選型並驗包，不呼叫安裝或UAC'
+$preflight=Get-SetupDriverPreflight -PackageRoot $exported -DriverPackagePath $exported -PathSpecified -NonInteractive -ConfirmedBoard 'NUC8i7HNB' -ConfirmationComputer $env:COMPUTERNAME
+Assert ($preflight.Disposition -ceq 'Ready' -and $preflight.Hardware.DriverBoard -eq 'NUC8i7HNB' -and $preflight.Hardware.BoardProduct -eq '' -and $preflight.Payload.Status -eq 'Passed') '匯出包具名前置函式可獨立選型並驗包，不呼叫安裝或UAC'
+$wrongConfirmation='';try{Get-SetupDriverPreflight -PackageRoot $exported -DriverPackagePath $exported -PathSpecified -NonInteractive -ConfirmedBoard 'NUC8i7HNB' -ConfirmationComputer 'other-machine-fixture'|Out-Null}catch{$wrongConfirmation=$_.Exception.Message}
+Assert ($wrongConfirmation -match '不屬於目前電腦') '未知硬體的跨電腦手動確認被拒絕'
+$tokens=$null;$errors=$null;$installerAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $exported 'modules/drivers/install_drivers.ps1'),[ref]$tokens,[ref]$errors)
+$preflightCalls=@($installerAst.FindAll({param($node) $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -ceq 'Get-SetupDriverPreflight'},$true))
+Assert ($errors.Count -eq 0 -and $preflightCalls.Count -eq 1) '匯出包真安裝入口呼叫同一具名前置函式'
+$principalAssignments=@($installerAst.FindAll({param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and $node.Left.VariablePath.UserPath -ceq 'principal'},$true))
+$verifyBranches=@($installerAst.FindAll({param($node) if($node -isnot [Management.Automation.Language.IfStatementAst]){return $false};$vars=@($node.Clauses[0].Item1.FindAll({param($inner) $inner -is [Management.Automation.Language.VariableExpressionAst] -and $inner.VariablePath.UserPath -ceq 'VerifyOnly'},$true));return $vars.Count -gt 0},$true)|Where-Object {$_.Extent.StartOffset -gt $preflightCalls[0].Extent.StartOffset -and $principalAssignments.Count -eq 1 -and $_.Extent.StartOffset -lt $principalAssignments[0].Extent.StartOffset})
+Assert ($principalAssignments.Count -eq 1 -and $verifyBranches.Count -eq 1 -and @($verifyBranches[0].FindAll({param($node) $node -is [Management.Automation.Language.ReturnStatementAst]},$true)).Count -gt 0) 'VerifyOnly在前置檢查後且UAC之前返回'
 Remove-Item Function:Get-CimInstance
 @{SchemaVersion=1;HardwareProfile='Other';Architecture='x64';SupportedBoards=@('Other')}|ConvertTo-Json|Set-Content (Join-Path $exported 'package.json') -Encoding UTF8
 $caught=$false;try{Test-SetupDriverPayload $hv $exported|Out-Null}catch{$caught=$true}
