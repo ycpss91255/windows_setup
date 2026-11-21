@@ -63,6 +63,7 @@
   "apply_ssh_settings.cmd": "modules/ssh/apply_ssh_settings.cmd",
   "initialize_ssh_client.ps1": "modules/ssh/initialize_ssh_client.ps1",
   "apply_lan_ping_settings.ps1": "modules/ssh/apply_lan_ping_settings.ps1",
+  "lan_ping_library.ps1": "modules/ssh/lan_ping_library.ps1",
   "apply_hosts_sync.ps1": "modules/ssh/apply_hosts_sync.ps1",
   "hosts_sync_library.ps1": "modules/ssh/hosts_sync_library.ps1",
   "apply_hosts_sync.cmd": "modules/ssh/apply_hosts_sync.cmd",
