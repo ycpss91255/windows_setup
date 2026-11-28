@@ -1,4 +1,22 @@
 ﻿#Requires -Version 5.1
+# 完整 suite 名冊：Invoke-SetupCI 與容器分片合併共用同一份探索規則，避免兩處清單分歧。
+function Get-SetupCISuiteRoster {
+ param([Parameter(Mandatory=$true)][string]$PackageRoot)
+ $rosterTestRoot=Join-Path $PackageRoot 'test'
+# The inventory is the roster: every owned unit/integration suite runs once for All.
+$cases=@(foreach($kind in @('Unit','Integration')){
+ foreach($file in @(Get-ChildItem (Join-Path $rosterTestRoot ('powershell/'+$kind.ToLowerInvariant())) -Filter '*_tests.ps1' -File|Sort-Object Name)){
+  @{Name=($kind+'.'+$file.BaseName.Replace('_tests',''));Layer=$kind;Path=$file.FullName;Arguments=$(if($file.Name -eq 'layout_tests.ps1'){@('-PackageRoot',$PackageRoot,'-SourceOnly')}else{@()})}
+ }
+})
+# Every test file in each layer must participate; naming mistakes must not hide suites.
+foreach($kind in @('unit','integration')){
+ $all=@(Get-ChildItem (Join-Path $rosterTestRoot ('powershell/'+$kind)) -File -Filter '*.ps1')
+ if(-not $all.Count -or @($all|Where-Object {$_.Name -cnotmatch '^[a-z0-9_]+_tests\.ps1$'}).Count){throw ('Invalid or empty test inventory: '+$kind)}
+ if(@($cases|Where-Object {$_.Layer -eq $kind}).Count -ne $all.Count){throw ('Incomplete test discovery: '+$kind)}
+}
+ return $cases
+}
 function Invoke-SetupCI {
  param([Parameter(Mandatory=$true)][string]$PackageRoot,[Parameter(Mandatory=$true)][string]$ReportDirectory,[ValidateSet('All','Unit','Integration')][string]$Layer='All',[ValidateRange(1,4)][int]$Parallelism=1,[string[]]$Suite=@(),[int]$ShardIndex=0,[int]$ShardCount=1)
 $ErrorActionPreference='Stop'
@@ -19,18 +37,7 @@ $parseFailures=@(foreach($file in $scripts){
 })
 $parseFailures|Out-File (Join-Path $ReportDirectory 'syntax.log') -Encoding UTF8
 if($ShardIndex -eq 0){$results.Add([pscustomobject]@{Name='PowerShell 5.1 語法';Layer='Static';Status=$(if($parseFailures.Count){'Failed'}else{'Passed'});Executed=$true;Passed=($parseFailures.Count -eq 0);ExitCode=[int]($parseFailures.Count -gt 0)})}
-# The inventory is the roster: every owned unit/integration suite runs once for All.
-$cases=@(foreach($kind in @('Unit','Integration')){
- foreach($file in @(Get-ChildItem (Join-Path $testRoot ('powershell/'+$kind.ToLowerInvariant())) -Filter '*_tests.ps1' -File|Sort-Object Name)){
-  @{Name=($kind+'.'+$file.BaseName.Replace('_tests',''));Layer=$kind;Path=$file.FullName;Arguments=$(if($file.Name -eq 'layout_tests.ps1'){@('-PackageRoot',$packageRoot,'-SourceOnly')}else{@()})}
- }
-})
-# Every test file in each layer must participate; naming mistakes must not hide suites.
-foreach($kind in @('unit','integration')){
- $all=@(Get-ChildItem (Join-Path $testRoot ('powershell/'+$kind)) -File -Filter '*.ps1')
- if(-not $all.Count -or @($all|Where-Object {$_.Name -cnotmatch '^[a-z0-9_]+_tests\.ps1$'}).Count){throw ('Invalid or empty test inventory: '+$kind)}
- if(@($cases|Where-Object {$_.Layer -eq $kind}).Count -ne $all.Count){throw ('Incomplete test discovery: '+$kind)}
-}
+$cases=@(Get-SetupCISuiteRoster -PackageRoot $packageRoot)
 $reportLayer=$Layer
 $cases=@($cases|Where-Object {$Layer -eq 'All' -or $_.Layer -eq $Layer})
 # 指定 Suite 只縮小執行範圍；完整清單檢查已先完成，未知、重複或空白名稱一律拒絕。
