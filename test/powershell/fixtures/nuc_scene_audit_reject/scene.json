@@ -1,0 +1,26 @@
+{
+ "Issue": 481,
+ "CapturedAt": "2026-11-27",
+ "Sid": "S-1-5-21-1-2-3-500",
+ "ImageState": "IMAGE_STATE_SPECIALIZE_RESEAL_TO_AUDIT",
+ "UnfixedRoute": "RejectUnknownSetupState",
+ "UnfixedMessage": "無法確認帳號準備條件或正式使用者桌面；狀態未知、矛盾或仍忙碌，未變更設定。ImageState=IMAGE_STATE_SPECIALIZE_RESEAL_TO_AUDIT",
+ "DiagnosticContext": {
+  "IsAdministrator": true,
+  "DesktopOwned": true
+ },
+ "DiagnosticModeFacts": {
+  "ReadSucceeded": true,
+  "Build": 26300,
+  "ProductType": 1,
+  "IsWinPE": false,
+  "LocalBuiltin": true,
+  "OobeApiSucceeded": true,
+  "OobeComplete": false,
+  "OobeInProgress": 1,
+  "OobeProcessInSession": false,
+  "SetupProcessInSession": false,
+  "ProfileMatches": true
+ },
+ "DiagnosticRoute": "PrepareOobe"
+}

@@ -31,12 +31,52 @@ function Get-SetupInitPreparationFacts {
   $nativeProfile=[Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile,[Environment+SpecialFolderOption]::DoNotVerify)
   $profileMatches=($registered -and $nativeProfile -and [IO.Path]::GetFullPath($registered).TrimEnd('\') -ieq [IO.Path]::GetFullPath($nativeProfile).TrimEnd('\'))
   $processes=@(Get-CimInstance Win32_Process -Filter "Name='msoobe.exe' OR Name='CloudExperienceHostBroker.exe' OR Name='CloudExperienceHostApp.exe' OR Name='oobenetworkconnectionflow.exe' OR Name='setup.exe' OR Name='setuphost.exe' OR Name='setupprep.exe' OR Name='sysprep.exe'" -ErrorAction Stop|Where-Object SessionId -eq $Identity.SessionId)
-  $oobe=@($processes|Where-Object {$_.Name -in @('msoobe.exe','CloudExperienceHostBroker.exe','CloudExperienceHostApp.exe','oobenetworkconnectionflow.exe')}).Count -gt 0
-  $setupBusy=@($processes|Where-Object {$_.Name -in @('setup.exe','setuphost.exe','setupprep.exe','sysprep.exe')}).Count -gt 0
+  $oobeNames=[string[]]@($processes|Where-Object {$_.Name -in @('msoobe.exe','CloudExperienceHostBroker.exe','CloudExperienceHostApp.exe','oobenetworkconnectionflow.exe')}|ForEach-Object {[string]$_.Name}|Sort-Object -Unique)
+  $setupNames=[string[]]@($processes|Where-Object {$_.Name -in @('setup.exe','setuphost.exe','setupprep.exe','sysprep.exe')}|ForEach-Object {[string]$_.Name}|Sort-Object -Unique)
+  $sysprepIds=[int[]]@($processes|Where-Object {$_.Name -eq 'sysprep.exe' -and $null -ne $_.ProcessId}|ForEach-Object {[int]$_.ProcessId}|Where-Object {$_ -gt 0})
+  $oobe=$oobeNames.Count -gt 0
+  $setupBusy=$setupNames.Count -gt 0
   $localBuiltin=$false
   if($Identity.Sid -match '-500$'){$user=Get-LocalUser -SID $Identity.UserSID -ErrorAction Stop;$localBuiltin=([string]$user.SID -eq $Identity.Sid)}
-  return @{ReadSucceeded=$true;Build=[int]$os.BuildNumber;ProductType=[int]$os.ProductType;IsWinPE=[bool](Test-Path -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\MiniNT' -ErrorAction Stop);OobeApiSucceeded=$completion.Succeeded;OobeComplete=$completion.Complete;SetupInProgress=$setup.SystemSetupInProgress;OobeInProgress=$setup.OOBEInProgress;OobeProcessInSession=$oobe;SetupProcessInSession=$setupBusy;ProfileMatches=[bool]$profileMatches;LocalBuiltin=[bool]$localBuiltin}
+  return @{ReadSucceeded=$true;Build=[int]$os.BuildNumber;ProductType=[int]$os.ProductType;IsWinPE=[bool](Test-Path -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\MiniNT' -ErrorAction Stop);OobeApiSucceeded=$completion.Succeeded;OobeComplete=$completion.Complete;SetupInProgress=$setup.SystemSetupInProgress;OobeInProgress=$setup.OOBEInProgress;OobeProcessInSession=$oobe;SetupProcessInSession=$setupBusy;OobeProcessNames=$oobeNames;SetupProcessNames=$setupNames;SysprepProcessIds=$sysprepIds;ProfileMatches=[bool]$profileMatches;LocalBuiltin=[bool]$localBuiltin}
  }catch{return @{ReadSucceeded=$false}}
+}
+# Asks the Audit-mode Sysprep dialog window to close (same as Cancel); never force-kills a process that may be working.
+function Close-SetupInitSysprepDialog {
+ param([int[]]$ProcessIds)
+ if(-not $ProcessIds -or $ProcessIds.Count -eq 0){return $false}
+ foreach($id in $ProcessIds){
+  try{$process=[Diagnostics.Process]::GetProcessById($id)}catch{continue}
+  try{
+   if($process.ProcessName -ine 'sysprep' -or $process.MainWindowHandle -eq [IntPtr]::Zero){return $false}
+   if(-not $process.CloseMainWindow()){return $false}
+   if(-not $process.WaitForExit(15000)){return $false}
+  }catch{return $false}finally{$process.Dispose()}
+ }
+ return $true
+}
+# Local record of a rejected Init state for the next diagnosis: no SID, user name or password; kept under ProgramData, never on the USB kit.
+function Write-SetupInitRejectRecord {
+ param([string]$Root,$Context,[string]$Route,[string[]]$Reasons,[int]$Rechecks,[bool]$SysprepDialogClosed)
+ try{
+  if(-not $Root){return $null}
+  $directory=Join-Path $Root 'windows_setup_init_diagnostics'
+  [void][IO.Directory]::CreateDirectory($directory)
+  $facts=[ordered]@{}
+  $source=$Context.ModeFacts
+  if($source -is [Collections.IDictionary]){foreach($key in @($source.Keys|ForEach-Object {[string]$_}|Sort-Object)){$facts[$key]=$source[$key]}}
+  elseif($null -ne $source){foreach($property in $source.PSObject.Properties){$facts[$property.Name]=$property.Value}}
+  $now=[DateTime]::UtcNow
+  $record=[ordered]@{Schema=1;TimeUtc=$now.ToString('o');Route=$Route;ImageState=[string]$Context.ImageState;IsAdministrator=[bool]$Context.IsAdministrator;BuiltinAdministrator=([string]$Context.Sid -match '-500$');DesktopOwned=[bool]$Context.DesktopOwned;Rechecks=$Rechecks;SysprepDialogClosed=$SysprepDialogClosed;Reasons=@($Reasons);ModeFacts=$facts}
+  $path=Join-Path $directory ('init_reject_'+$now.ToString('yyyyMMddTHHmmssfff')+'Z.json')
+  [IO.File]::WriteAllText($path,(ConvertTo-Json -InputObject $record -Depth 5),(New-Object Text.UTF8Encoding($false)))
+  foreach($old in @(Get-ChildItem -LiteralPath $directory -Filter 'init_reject_*.json' -File|Sort-Object Name -Descending|Select-Object -Skip 20)){Remove-Item -LiteralPath $old.FullName -Force -ErrorAction SilentlyContinue}
+  return $path
+ }catch{return $null}
+}
+function Format-SetupInitRecordNote([string]$Path){
+ if($Path){return '診斷紀錄：'+$Path}
+ return '診斷紀錄未能寫入。'
 }
 function Test-SetupInitInteractiveHost {
  try {return [Environment]::UserInteractive -and $Host.Name -ceq 'ConsoleHost' -and -not [Console]::IsInputRedirected} catch {return $false}
@@ -60,6 +100,26 @@ $sid=$context.Sid
 if($ExpectedUserSID -and $ExpectedUserSID -ne $sid){throw '提權後帳號已改變，請使用原帳號的管理員權限。'}
 $admin=$context.IsAdministrator;$imageState=$context.ImageState;$desktopOwned=$context.DesktopOwned
 $route=Get-InitRoute -Sid $sid -ImageState $imageState -IsAdministrator $admin -DesktopOwned $desktopOwned -ModeFacts $context.ModeFacts
+$sysprepClosed=$false;$rechecks=0;$recheckLimit=6;$recheckSeconds=5
+while($route -eq 'RejectUnknownSetupState'){
+ if(-not $sysprepClosed -and (Test-InitSysprepDialogOnlyBlocker -Sid $sid -ImageState $imageState -IsAdministrator $admin -DesktopOwned $desktopOwned -ModeFacts $context.ModeFacts)){
+  if(-not (Close-SetupInitSysprepDialog -ProcessIds $context.ModeFacts.SysprepProcessIds)){
+   $record=Write-SetupInitRejectRecord -Root $env:ProgramData -Context $context -Route $route -Reasons (Get-InitRouteRejectReasons -Sid $sid -ImageState $imageState -IsAdministrator $admin -DesktopOwned $desktopOwned -ModeFacts $context.ModeFacts) -Rechecks $rechecks -SysprepDialogClosed $false
+   throw ('稽核模式自動開啟的 Sysprep（系統準備工具）對話框無法自動關閉，未變更設定。請在該視窗按「取消」關閉後，再重跑 init.cmd。'+(Format-SetupInitRecordNote $record))
+  }
+  Write-Host '已關閉稽核模式自動開啟的 Sysprep（系統準備工具）對話框，重新確認狀態。'
+  $sysprepClosed=$true
+ }elseif($rechecks -lt $recheckLimit -and (Test-InitTransientSetupBlocker -Sid $sid -ImageState $imageState -IsAdministrator $admin -DesktopOwned $desktopOwned -ModeFacts $context.ModeFacts)){
+  if($rechecks -eq 0){Write-Host ('同一工作階段仍有安裝或 OOBE 程序，可能是開機初期仍在收尾；每 '+$recheckSeconds+' 秒重新檢查，最多 '+$recheckLimit+' 次。')}
+  Start-Sleep -Seconds $recheckSeconds
+  $rechecks++
+ }else{break}
+ $context=Get-SetupInitContext
+ $sid=$context.Sid
+ if($ExpectedUserSID -and $ExpectedUserSID -ne $sid){throw '提權後帳號已改變，請使用原帳號的管理員權限。'}
+ $admin=$context.IsAdministrator;$imageState=$context.ImageState;$desktopOwned=$context.DesktopOwned
+ $route=Get-InitRoute -Sid $sid -ImageState $imageState -IsAdministrator $admin -DesktopOwned $desktopOwned -ModeFacts $context.ModeFacts
+}
 Write-Host ('=== Init：Windows '+[Environment]::OSVersion.Version+'；階段 '+$route+' ===') -ForegroundColor Cyan
 if($route -eq 'ElevationRequired'){
  Write-Host '請允許目前帳號的管理員權限；不可輸入另一個管理員帳號。'
@@ -69,7 +129,12 @@ if($route -eq 'ElevationRequired'){
  return
 }
 if($route -eq 'RejectBuiltinAdministrator'){throw '目前是一般 Administrator 桌面，不是可確認的稽核模式。請登入正式的本機管理員帳號再執行 Init。'}
-if($route -eq 'RejectUnknownSetupState'){throw ('無法確認帳號準備條件或正式使用者桌面；狀態未知、矛盾或仍忙碌，未變更設定。ImageState='+$imageState)}
+if($route -eq 'RejectUnknownSetupState'){
+ $reasons=@(Get-InitRouteRejectReasons -Sid $sid -ImageState $imageState -IsAdministrator $admin -DesktopOwned $desktopOwned -ModeFacts $context.ModeFacts)
+ $record=Write-SetupInitRejectRecord -Root $env:ProgramData -Context $context -Route $route -Reasons $reasons -Rechecks $rechecks -SysprepDialogClosed $sysprepClosed
+ $waited=$(if($rechecks){'已重新檢查 '+$rechecks+' 次（約 '+($rechecks*$recheckSeconds)+' 秒）仍不符。'}else{''})
+ throw ('無法確認帳號準備條件或正式使用者桌面，未變更設定。不符條件：'+($reasons -join '；')+'。'+$waited+'ImageState='+$imageState+'。'+(Format-SetupInitRecordNote $record))
+}
 if(-not $context.Is64Bit -or $context.Architecture -ne 'AMD64'){throw '本入口僅支援 x64 Windows，請用 64 位元 Windows PowerShell。'}
 if($route -eq 'DesktopReady'){
  $user=Get-LocalUser -SID $context.UserSID -ErrorAction Stop

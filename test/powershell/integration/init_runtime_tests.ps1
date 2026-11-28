@@ -56,7 +56,8 @@ try{
  ResetCase;$script:native.Is64Bit=$false;Reject {RunInit} '非x64流程拒絕'
  ResetCase;$script:native.Sid='S-1-5-18';Reject {RunInit} 'SYSTEM不從失敗F10路線落入Audit寫入'
  AuditCase;$script:desktop=$false;Reject {RunInit} 'Audit不是目前桌面owner拒絕'
- AuditCase;$script:ownerExit=5;Reject {RunInit} 'native owner query failure cannot reuse matching SID';Assert ($script:queue.Count -eq 0 -and -not(Test-Path $env:ProgramData)) 'owner failure performs no prompt or write'
+ AuditCase;$script:ownerExit=5;Reject {RunInit} 'native owner query failure cannot reuse matching SID';$entries=@(Get-ChildItem -LiteralPath $env:ProgramData -Force -ErrorAction SilentlyContinue);$records=@(Get-ChildItem -LiteralPath (Join-Path $env:ProgramData 'windows_setup_init_diagnostics') -Force -ErrorAction SilentlyContinue)
+ Assert ($script:queue.Count -eq 0 -and ($entries|ForEach-Object Name) -join ',' -ceq 'windows_setup_init_diagnostics' -and $records.Count -eq 1 -and $records[0].Name -like 'init_reject_*.json' -and [IO.File]::ReadAllText($records[0].FullName) -notmatch 'S-1-5-' -and [IO.File]::ReadAllText($records[0].FullName) -match '"DesktopOwned":\s*false') 'owner failure performs no prompt or setup write; only the SID-free reject diagnostic record is written'
  AuditCase;$script:queue.Enqueue('no');Reject {RunInit} '未同意帳號及OOBE準備零寫入'
  AuditCase;$script:queue.Enqueue('YES');$script:runningSysprep=$true;Reject {RunInit} '既有Sysprep程序拒絕'
  AuditCase;$script:queue.Enqueue('YES');$script:sMode=1;Reject {RunInit} 'SMode拒絕'
