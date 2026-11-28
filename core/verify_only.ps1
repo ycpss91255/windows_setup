@@ -8,9 +8,11 @@ if($ExpectedUserSID -and $ExpectedUserSID -ne $currentSID){throw '提權後帳�
 . (Join-Path $PSScriptRoot 'verification.ps1')
 . (Resolve-NucPath 'ssh_firewall.ps1')
 Initialize-NucReports
-$DriverPackagePath=Get-SetupSavedDriverSelection -ResultPath (Resolve-NucPath 'Setup-Result.json')
+$driverSource=Get-SetupEntryDriverSource -ResultPath (Resolve-NucPath 'Setup-Result.json')
+$DriverPackagePath=$driverSource.Path
 $confirmation=Get-SetupSavedHardwareConfirmation -ResultPath (Resolve-NucPath 'Setup-Result.json')
 $hardware=Get-SetupHardwareProfile -DriverPackagePath $DriverPackagePath @confirmation
+if($driverSource.PayloadAbsent){$hardware|Add-Member -NotePropertyName DriverPayloadAbsent -NotePropertyValue $true -Force}
 if(-not (Test-SetupEntryAdministrator)){
  $command="& '"+$PSCommandPath.Replace("'","''")+"' -ExpectedUserSID '"+$currentSID+"'"
  $command+=" -VerificationRunId '"+$VerificationRunId+"'"

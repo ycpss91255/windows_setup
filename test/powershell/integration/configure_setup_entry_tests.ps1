@@ -28,6 +28,9 @@ function Resolve-SetupDriverChoice {param($Record,$Hardware) [pscustomobject]@{R
 function Resolve-NucPath {param($Name) if($Name -notin @('test_setup_prerequisites.ps1','configuration_library.ps1')){throw 'unexpected resolver name'};Join-Path $PSScriptRoot $Name}
 function New-SetupDriverSelection {param($PackageRoot,$DriverPackagePath) throw 'unexpected driver selection'}
 '@,$utf)
+[IO.File]::WriteAllText((Join-Path $core 'resume_library.ps1'),@'
+function Invoke-SetupResumeRegistration {param($PackageRoot,$Hardware,[datetime]$StartedAt) Add-FixtureEvent 'resume'}
+'@,$utf)
 [IO.File]::WriteAllText((Join-Path $init 'provisioning_library.ps1'),@'
 function Invoke-InitWindowsCheckpoint {param($StageRoot) if($StageRoot -ne (Join-Path $env:ProgramData 'windows_setup_init')){throw 'unexpected stage root'};Add-FixtureEvent 'checkpoint'}
 '@,$utf)
@@ -96,13 +99,19 @@ try{
     $values=@{};for($i=1;$i -lt $parts.Count;$i++){if($parts[$i] -isnot [Management.Automation.Language.CommandParameterAst] -or $parts[$i].Argument){throw 'unexpected captured argument'};$key=$parts[$i].ParameterName;if($key -notin @('ExpectedUserSID','DriverPackagePath','ConfirmedBoard','ConfirmationComputer','NonInteractive') -or $values.ContainsKey($key)){throw 'unexpected captured parameter'};if($i+1 -lt $parts.Count -and $parts[$i+1] -is [Management.Automation.Language.StringConstantExpressionAst]){$i++;$values[$key]=$parts[$i].Value}else{$values[$key]=$true}}
     Assert ($values.ExpectedUserSID -ceq 'fixture-sid' -and (SamePath $values.DriverPackagePath $driver) -and $values.ConfirmedBoard -ceq 'board' -and $values.ConfirmationComputer -ceq 'computer' -and $values.NonInteractive -and -not $values.ContainsKey('UserName') -and -not $values.ContainsKey('AutoLogonPassword')) 'captured literal flags preserve original elevation contract';continue
    }
-   if($case -in @('prereq','configuration')){Assert ($exit -ne 0 -and $childText.Contains('fixture '+$case+' failure') -and -not(Test-Path $data)) ('fixture failure propagates '+$case);continue}
+   if($case -in @('prereq','configuration')){
+    Assert ($exit -ne 0 -and $childText.Contains('fixture '+$case+' failure') -and -not(Test-Path $data)) ('fixture failure propagates '+$case)
+    $failedOrder=@(Get-Content -LiteralPath $events) -join ','
+    if($case -eq 'configuration'){Assert ($failedOrder -ceq 'reports,hardware,checkpoint,prereq,configuration,resume') '設定中途失敗仍登記重開後自動驗收'}
+    else{Assert (-not $failedOrder.Contains('resume')) '前置檢查失敗不登記重開後自動驗收'}
+    continue
+   }
    if($case -eq 'user_mismatch'){Assert ($exit -ne 0 -and $childText.Contains('自動登入帳號必須與目前執行帳號相同') -and -not(Test-Path $data)) 'different user rejected before configuration';continue}
    Assert ($exit -eq 0 -and (Test-Path $data)) 'admin entry reaches fake configuration'
    $result=Get-Content -LiteralPath $data -Raw|ConvertFrom-Json;$order=@(Get-Content -LiteralPath $events)
    $driverMatches=if($driver){SamePath $result.Driver $driver}else{[string]::IsNullOrEmpty($result.Driver)}
    Assert ($result.User -ceq $env:USERNAME -and $result.PasswordMatches -and $driverMatches -and $result.Board -ceq 'board' -and $result.Computer -ceq 'computer' -and $result.NonInteractive) 'admin arguments reach fixed fake unchanged'
-   Assert (($order -join ',') -ceq 'reports,hardware,checkpoint,prereq,configuration') 'fixture effects retain order and count'
+   Assert (($order -join ',') -ceq 'reports,hardware,checkpoint,prereq,configuration,resume') 'fixture effects retain order and count; resume registration runs once after configuration'
   }
  }
  $mapping=Get-Content -LiteralPath (Join-Path $root 'core/paths.json') -Raw|ConvertFrom-Json

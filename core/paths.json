@@ -25,6 +25,8 @@
   "Apply-UACSettings.ps1": "modules/uac/apply_uac_settings.ps1",
   "Apply-UACSettings.cmd": "modules/uac/apply_uac_settings.cmd",
   "after_restart_library.ps1": "core/after_restart_library.ps1",
+  "resume_library.ps1": "core/resume_library.ps1",
+  "resume_after_restart.ps1": "core/resume_after_restart.ps1",
   "configuration_library.ps1": "core/configuration_library.ps1",
   "verification_library.ps1": "core/verification_library.ps1",
   "mdns_library.ps1": "modules/ssh/mdns_library.ps1",

@@ -76,6 +76,5 @@ try {
     if($stageErrors.Count -or $problems.Count){throw '部分步驟或裝置檢查未完成，已寫入 Setup-Result.json 與 Setup-Progress.json；請查看紀錄後重試。'}
     elseif($pendingModules.Count){Write-Warning ('本輪仍有待處理項目：'+(($pendingModules|ForEach-Object {$_.Module+' / '+$_.Status}) -join '；'))}
     else{Write-Host '本輪一鍵設定完成。' -ForegroundColor Green}
-    Write-Host '請手動重新開機，再執行 windows.cmd -AfterRestart 檢查及繼續更新。'
 } finally { $AutoLogonPassword=$null; Stop-Transcript | Out-Null }
 }

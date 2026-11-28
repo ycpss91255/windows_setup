@@ -2,7 +2,7 @@
 . (Join-Path $PSScriptRoot 'driver_archive_library.ps1')
 . (Join-Path $PSScriptRoot 'driver_plan_library.ps1')
 function Invoke-SetupDriverVerification {
- param([Parameter(Mandatory=$true)][string]$DriverRoot,[string]$VerificationRunId=([guid]::NewGuid().ToString()))
+ param([Parameter(Mandatory=$true)][string]$DriverRoot,[string]$VerificationRunId=([guid]::NewGuid().ToString()),[switch]$InstalledStateOnly)
  $parsed=[guid]::Empty;if(-not [guid]::TryParse($VerificationRunId,[ref]$parsed)){throw '驅動驗證需要合法本輪識別。'}
  $raw=Get-Content -LiteralPath (Join-Path $DriverRoot 'manifest.json') -Raw -Encoding UTF8|ConvertFrom-Json
  if($raw.SchemaVersion -ne 2){throw '舊版驅動包沒有已核官方目標；請取得新版獨立包再驗證。'}
@@ -10,7 +10,8 @@ function Invoke-SetupDriverVerification {
  if(-not [datetime]::TryParseExact($auditedAt,'yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,[ref]$auditDate)){throw '官方驅動清單缺少有效的 AuditedAt 查核日期。'}
  $entries=@(Get-SetupDriverManifestEntries -Manifest $raw)
  if($raw.SchemaVersion -eq 2 -and $raw.ProfileId){Add-SetupDriverNamingOnlyMarks -Entries $entries -ProfileId ([string]$raw.ProfileId)}
- foreach($entry in $entries){if((Get-FileHash -LiteralPath (Join-Path $DriverRoot $entry.File) -Algorithm SHA256 -ErrorAction Stop).Hash -ne $entry.SHA256){throw ('驅動封存檔 SHA256 不符：'+$entry.File)}}
+ # 驅動包不在時只讀回本機已安裝驅動；清單身分由呼叫端以原選擇的雜湊核對。
+ if(-not $InstalledStateOnly){foreach($entry in $entries){if((Get-FileHash -LiteralPath (Join-Path $DriverRoot $entry.File) -Algorithm SHA256 -ErrorAction Stop).Hash -ne $entry.SHA256){throw ('驅動封存檔 SHA256 不符：'+$entry.File)}}}
  $allTargets=@($entries|ForEach-Object Drivers)
  Write-Host ('唯讀重新盤點 '+$allTargets.Count+' 個已核官方目標；查核日期 '+$auditedAt) -ForegroundColor Cyan
  $devices=@(Get-SetupDriverDeviceInventory -Targets $allTargets)

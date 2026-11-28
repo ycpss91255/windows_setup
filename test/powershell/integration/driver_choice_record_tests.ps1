@@ -32,6 +32,7 @@ function Resolve-NucPath {param($Name)
 }
 '@
 Put (Join-Path $init 'provisioning_library.ps1') 'function Invoke-InitWindowsCheckpoint {param($StageRoot)}'
+Put (Join-Path $core 'resume_library.ps1') 'function Invoke-SetupResumeRegistration {param($PackageRoot,$Hardware,[datetime]$StartedAt)}'
 Put (Join-Path $stub 'test_setup_prerequisites.ps1') 'param($DriverPackagePath,$ConfirmedBoard,$ConfirmationComputer)'
 Put (Join-Path $stub 'verification_library.ps1') 'function Invoke-SetupDriverFreshVerification {param($DriverPackagePath,$VerificationRunId) [pscustomobject]@{Success=$true;Targets=@();VerificationRunId=$VerificationRunId}}'
 Put (Join-Path $stub 'verify_only.ps1') @'

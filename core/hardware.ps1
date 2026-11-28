@@ -125,22 +125,23 @@ function Get-SetupDriverManifestEntries {
 }
 function Test-SetupDriverPackageIdentity {
  # Read-only identity check shared by the Enter prompt and the full verification; it never hashes archives.
- param([Parameter(Mandatory=$true)]$Hardware,[Parameter(Mandatory=$true)][string]$DriverPackagePath,[switch]$AllowLegacyManifest)
+ param([Parameter(Mandatory=$true)]$Hardware,[Parameter(Mandatory=$true)][string]$DriverPackagePath,[switch]$AllowLegacyManifest,[switch]$SkipArchives)
  $driverRoot=$DriverPackagePath
  if(-not $AllowLegacyManifest){
   $identity=Get-Content -LiteralPath (Join-Path $driverRoot 'package.json') -Raw -Encoding UTF8 -ErrorAction Stop|ConvertFrom-Json
   if($identity.SchemaVersion -eq 2){
    $profile=$Hardware.DriverProfileData
    if(-not $profile -or $identity.ProfileId -cne $Hardware.DriverProfileId -or $identity.Architecture -cne $profile.Architecture -or $identity.ProfileSHA256 -notmatch '^[A-Fa-f0-9]{64}$' -or $identity.ProfileSHA256 -ne $profile.ProfileSHA256 -or @($identity.SupportedBoards).Count -ne @($profile.SupportedBoards).Count -or @($identity.SupportedBoards|Select-Object -Unique).Count -ne @($profile.SupportedBoards).Count -or @($identity.SupportedBoards|Where-Object {$_ -notin $profile.SupportedBoards}).Count -or $Hardware.DriverBoard -notin $profile.SupportedBoards){throw '驅動包設定檔與目前硬體識別不符。'}
+   # 本機保存的驅動清單不含包內設定檔；工具設定檔雜湊已與 package.json 宣告比對。
    $included=Join-Path $driverRoot ('drivers/'+$profile.ProfileId+'/profile.json')
-   if((Get-FileHash -LiteralPath $included -Algorithm SHA256 -ErrorAction Stop).Hash -ne $profile.ProfileSHA256){throw '驅動包內設定檔原始雜湊不符。'}
+   if(-not $SkipArchives -and (Get-FileHash -LiteralPath $included -Algorithm SHA256 -ErrorAction Stop).Hash -ne $profile.ProfileSHA256){throw '驅動包內設定檔原始雜湊不符。'}
   }elseif($identity.SchemaVersion -ne 1 -or -not $Hardware.IsNuc8 -or $identity.HardwareProfile -ne 'NUC8' -or $identity.Architecture -ne 'x64' -or @($identity.SupportedBoards).Count -ne 2 -or 'NUC8i7HVB' -notin $identity.SupportedBoards -or 'NUC8i7HNB' -notin $identity.SupportedBoards -or $Hardware.DriverBoard -notin $identity.SupportedBoards){throw '驅動包機型或架構識別不符合目前硬體。'}
  }
  $manifest=Get-Content -LiteralPath (Join-Path $driverRoot 'manifest.json') -Raw -Encoding UTF8 -ErrorAction Stop|ConvertFrom-Json
  $manifest=@(Get-SetupDriverManifestEntries -Manifest $manifest)
  foreach($entry in $manifest){
   if($entry.File -notmatch '^[^\/:]+\.zip$' -or $entry.File -match '^\.\.' -or $entry.SHA256 -notmatch '^[a-fA-F0-9]{64}$'){throw 'NUC 驅動清單格式不合法。'}
-  if(-not(Test-Path -LiteralPath (Join-Path $driverRoot $entry.File) -PathType Leaf)){throw ('缺少驅動：'+$entry.File)}
+  if(-not $SkipArchives -and -not(Test-Path -LiteralPath (Join-Path $driverRoot $entry.File) -PathType Leaf)){throw ('缺少驅動：'+$entry.File)}
  }
  [pscustomobject]@{Entries=$manifest}
 }
@@ -160,10 +161,15 @@ function Test-SetupDriverExactMatch {
  [pscustomobject]@{Matched=$true;Reason='';Code='Matched'}
 }
 function Test-SetupDriverPayload {
- param([Parameter(Mandatory=$true)]$Hardware,[string]$DriverPackagePath,[switch]$AllowLegacyManifest)
+ param([Parameter(Mandatory=$true)]$Hardware,[string]$DriverPackagePath,[switch]$AllowLegacyManifest,[switch]$InstalledStateOnly)
  if(-not $Hardware.DriverProfileId -and -not $Hardware.IsNuc8){return [pscustomobject]@{Status='Skipped';Count=0;Reason='目前硬體沒有驅動設定檔'}}
  if(-not $DriverPackagePath){return [pscustomobject]@{Status='Skipped';Count=0;Reason='未選擇獨立驅動包'}}
  $driverRoot=$DriverPackagePath
+ if($InstalledStateOnly){
+  # 驅動包已不在：只核對本機保存的清單身分，驗收改讀本機已安裝驅動，不把找不到封存檔當失敗。
+  $null=Test-SetupDriverPackageIdentity -Hardware $Hardware -DriverPackagePath $driverRoot -SkipArchives
+  return [pscustomobject]@{Status='InstalledState';Count=0;Reason='驅動包不在場，改以本機已安裝驅動讀回驗收'}
+ }
  $manifest=@((Test-SetupDriverPackageIdentity -Hardware $Hardware -DriverPackagePath $driverRoot -AllowLegacyManifest:$AllowLegacyManifest).Entries)
  $validationIndex=0
  foreach($entry in $manifest){
@@ -222,7 +228,34 @@ function Get-SetupSavedDriverSelection {
  }
  return $candidate
 }
-
+function Get-SetupResumeDriverSelection {
+ # 重開後自動驗收：原驅動包仍在原位置且身分相同時沿用；不在時改用本機保存的清單，只讀回已安裝狀態。
+ param([string]$ResultPath,[Parameter(Mandatory=$true)][string]$StagedDriverRoot,[string]$Computer=$env:COMPUTERNAME,[string]$UserSID)
+ $none=[pscustomobject]@{Path='';PayloadAbsent=$false;Selection=$null}
+ if(-not(Test-Path -LiteralPath $ResultPath -PathType Leaf)){return $none}
+ if(-not $UserSID){$UserSID=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value}
+ $saved=Get-Content -LiteralPath $ResultPath -Raw -ErrorAction Stop|ConvertFrom-Json
+ if($saved.Computer -ne $Computer -or $saved.UserSID -ne $UserSID -or -not $saved.HardwareProfile.DriverPackagePath){return $none}
+ $selection=$saved.HardwareProfile.DriverSelection
+ if(-not $selection -or $selection.SchemaVersion -ne 1 -or $selection.PackageSHA256 -notmatch '^[a-fA-F0-9]{64}$' -or $selection.ManifestSHA256 -notmatch '^[a-fA-F0-9]{64}$'){throw '驅動續跑紀錄格式不合法，無法自動驗收驅動；請插回工具包執行 windows.cmd -AfterRestart。'}
+ $original=[string]$selection.AbsolutePath
+ $present=([IO.Path]::IsPathRooted($original) -and (Test-Path -LiteralPath $original -PathType Container))
+ $root=if($present){$original}else{$StagedDriverRoot}
+ foreach($item in @(@('package.json','PackageSHA256'),@('manifest.json','ManifestSHA256'))){
+  $file=Join-Path $root $item[0]
+  if(-not(Test-Path -LiteralPath $file -PathType Leaf) -or (Get-FileHash -LiteralPath $file -Algorithm SHA256 -ErrorAction Stop).Hash -ne $selection.($item[1])){
+   if($present){throw '驅動包身分與原選擇不同，拒絕續跑；請重新選擇並驗證。'}
+   throw '本機保存的驅動清單與原選擇不同，拒絕驗收；請插回工具包執行 windows.cmd -AfterRestart。'
+  }
+ }
+ [pscustomobject]@{Path=$root;PayloadAbsent=(-not $present);Selection=$selection}
+}
+function Get-SetupEntryDriverSource {
+ # 一般入口沿用工具包旁的原選擇；本機續跑 runtime 改用原絕對位置或本機保存清單。
+ param([Parameter(Mandatory=$true)][string]$ResultPath)
+ if((Get-Command Test-SetupResumeRuntime -ErrorAction SilentlyContinue) -and (Test-SetupResumeRuntime)){return Get-SetupResumeDriverSelection -ResultPath $ResultPath -StagedDriverRoot (Get-SetupResumePaths).Driver}
+ [pscustomobject]@{Path=(Get-SetupSavedDriverSelection -ResultPath $ResultPath);PayloadAbsent=$false;Selection=$null}
+}
 function Get-SetupSavedHardwareConfirmation {
  param([string]$ResultPath,[string]$Computer=$env:COMPUTERNAME,[string]$UserSID)
  if(-not(Test-Path -LiteralPath $ResultPath -PathType Leaf)){return @{}}

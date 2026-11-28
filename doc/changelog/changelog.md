@@ -5,6 +5,8 @@
 ## [Unreleased]
 ### Added（新增）
 
+- 一鍵流程結束後，手動重開機並自動登入進桌面，會自動開啟一個終端機執行重開後驗收（與 `windows.cmd -AfterRestart` 相同），不需再找工具包或輸入資訊，也不跳出 UAC。結束前只把續跑必需的檔案（不含驅動封存檔）複製到 `%ProgramData%\NUC8-Setup\resume`，限 SYSTEM 與管理員存取，續跑前核對來源版本與逐檔 SHA256，不符就停止並說明；因此 `windows.cmd` 跑完後即可拔除 USB。驅動包不在時改讀本機已安裝驅動驗收，找不到驅動包不算失敗。報告寫在 `%ProgramData%\NUC8-Setup\reports`；通過後自動移除登記與暫存，仍需重開時保留並提示，最多自動執行 3 次。手動 `windows.cmd -AfterRestart` 仍可使用。
+
 - 自動登入模組提供 `-Restore`：取消自動登入並清除 Autologon 儲存的密碼，不需輸入密碼，也不還原套用前的狀態；`windows.cmd -VerifyOnly` 會把確認已停用的自動登入標示為略過。
 
 ### Changed（變更）

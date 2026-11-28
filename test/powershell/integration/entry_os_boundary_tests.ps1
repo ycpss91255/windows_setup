@@ -23,6 +23,7 @@ function Initialize-NucReports {}
 function Start-Process { throw 'fixture blocked process launch' }
 function Get-SetupHardwareProfile { param($DriverPackagePath,$ConfirmedBoard,$ConfirmationComputer) return @{} }
 function Get-SetupSavedDriverSelection { param($ResultPath) return '' }
+function Get-SetupEntryDriverSource { param($ResultPath) return [pscustomobject]@{Path='';PayloadAbsent=$false;Selection=$null} }
 function Get-SetupSavedHardwareConfirmation { param($ResultPath) return @{} }
 function Get-SetupModuleDecision { param($Module,$Hardware) return @{Applicable=$true} }
 function Resolve-NucPath { param($Name) return (Join-Path $PSScriptRoot 'safe.ps1') }

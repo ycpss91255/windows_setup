@@ -1,8 +1,8 @@
 ﻿#Requires -Version 5.1
 function Invoke-SetupDriverFreshVerification {
- param([Parameter(Mandatory=$true)][string]$DriverPackagePath,[Parameter(Mandatory=$true)][string]$VerificationRunId)
+ param([Parameter(Mandatory=$true)][string]$DriverPackagePath,[Parameter(Mandatory=$true)][string]$VerificationRunId,[switch]$InstalledStateOnly)
  . (Resolve-NucPath 'driver_installation_library.ps1')
- $results=@(Invoke-SetupDriverVerification -DriverRoot $DriverPackagePath -VerificationRunId $VerificationRunId)
+ $results=@(Invoke-SetupDriverVerification -DriverRoot $DriverPackagePath -VerificationRunId $VerificationRunId -InstalledStateOnly:$InstalledStateOnly)
  if($results.Count -ne 1 -or $results[0].Success -isnot [bool] -or $results[0].VerificationRunId -cne $VerificationRunId -or $results[0].Computer -cne [Environment]::MachineName -or $results[0].UserSID -cne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value){throw '驅動結果不是本輪、同機、同帳號的可信結果。'}
  return $results[0]
 }
@@ -85,10 +85,12 @@ else{try{
 $driverDecision=Get-SetupModuleDecision -Module 'install_drivers.ps1' -Hardware $hardware
 if(-not $driverDecision.Applicable){$checks.Add((New-SetupSkippedCheck -Name '已選驅動官方目標' -Reason $driverDecision.Reason));Write-Host ('[略過] '+$driverDecision.Reason)}
 else{try{
- $null=Test-SetupDriverPayload -Hardware $hardware -DriverPackagePath $DriverPackagePath
- $driver=Invoke-SetupDriverFreshVerification -DriverPackagePath $DriverPackagePath -VerificationRunId $VerificationRunId
+ $installedOnly=[bool]$hardware.DriverPayloadAbsent
+ $null=Test-SetupDriverPayload -Hardware $hardware -DriverPackagePath $DriverPackagePath -InstalledStateOnly:$installedOnly
+ $driver=Invoke-SetupDriverFreshVerification -DriverPackagePath $DriverPackagePath -VerificationRunId $VerificationRunId -InstalledStateOnly:$installedOnly
  $states=@($driver.Targets|Group-Object Status|ForEach-Object {$_.Name+'='+$_.Count}) -join '；'
- Add-Check '已選驅動官方目標' $driver.Success ('本輪重新讀取供應商、版本及狀態；'+$states)
+ $source=if($installedOnly){'驅動包不在場，改讀本機已安裝驅動；'}else{''}
+ Add-Check '已選驅動官方目標' $driver.Success ($source+'本輪重新讀取供應商、版本及狀態；'+$states)
 }catch{Add-Check '已選驅動官方目標' $false $_.Exception.Message}}
 $devices=@(Get-PnpDevice -PresentOnly|Where-Object Status -ne 'OK')
 Add-Check '驅動裝置' ($devices.Count -eq 0) ('異常數：'+$devices.Count)

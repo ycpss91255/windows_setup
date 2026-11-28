@@ -55,12 +55,15 @@ $driverReady=$true
 $driverDecision=Get-SetupModuleDecision -Module 'install_drivers.ps1' -Hardware $hardware
 if($DriverPackagePath -and $driverDecision.Applicable){
  try{
-  $null=Test-SetupDriverPayload -Hardware $hardware -DriverPackagePath $DriverPackagePath
+  $installedOnly=[bool]$hardware.DriverPayloadAbsent
+  $null=Test-SetupDriverPayload -Hardware $hardware -DriverPackagePath $DriverPackagePath -InstalledStateOnly:$installedOnly
   . (Resolve-NucPath 'verification_library.ps1')
-  $snapshot=Invoke-SetupDriverFreshVerification -DriverPackagePath $DriverPackagePath -VerificationRunId ([guid]::NewGuid().ToString())
+  $snapshot=Invoke-SetupDriverFreshVerification -DriverPackagePath $DriverPackagePath -VerificationRunId ([guid]::NewGuid().ToString()) -InstalledStateOnly:$installedOnly
+  if($installedOnly -and @($snapshot.Targets|Where-Object Status -eq 'UpdateRequired').Count){throw '已選驅動仍需安裝，但驅動包已不在本機；請插回工具包後執行 windows.cmd -AfterRestart。'}
   if(@($snapshot.Targets|Where-Object Status -eq 'UpdateRequired').Count){
    & (Resolve-NucPath 'install_drivers.ps1') -NonInteractive -DriverPackagePath $DriverPackagePath @confirmation
   }elseif(-not $snapshot.Success){throw '已選驅動目前仍有未驗證目標；未強行安裝，請查看唯讀盤點。'}
+  elseif($installedOnly){Write-Host '驅動包不在場；本機已安裝驅動讀回符合已核官方目標。' -ForegroundColor Green}
   else{Write-Host '已選驅動符合已核官方目標，未重新解壓及安裝。' -ForegroundColor Green}
  }catch{$driverReady=$false;$errors+=('install_drivers.ps1：'+$_.Exception.Message);$remaining+='install_drivers.ps1';Write-Warning $errors[-1]}
 }else{Write-Host '未選獨立驅動包或機型不適用，略過驅動續跑。'}
