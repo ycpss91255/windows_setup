@@ -542,7 +542,7 @@ Windows 啟用由使用者另外處理；本工具不處理 Ubuntu 分割或安�
 7. Apply-AMDPrivacySettings：NUC8 拒絕 AMD Software 地理位置存取；Generic 略過。已顯示的提示需手動關閉。
 8. Apply-Debloat：先呼叫 remove_one_drive.ps1 解除安裝 OneDrive，再依 debloat_apps.txt 清理預裝 App，包含 Xbox App、Game Bar、相關登入與語音元件，以及存在時的 Gaming Services。Windows 不可移除的 XboxGameCallableUI 保留。
 9. Apply-CopilotSettings：移除獨立桌面版 Copilot。
-10. Apply-TaskbarSettings：隱藏搜尋、天氣/小工具與工作檢視；僅釘選 Edge。登入後自動解除暫時釘選原則。
+10. Apply-TaskbarSettings：隱藏搜尋、天氣/小工具與工作檢視；僅釘選 Edge。登入後自動解除暫時釘選原則。重跑時已是目標值的登錄值不重寫。若個人的工作檢視按鈕開關被系統擋下（未經授權），改寫 HKLM 機器原則 `HKLM\SOFTWARE\Policies\Microsoft\Windows\Explorer\HideTaskViewButton=1` 並顯示警告；這個原則對這臺電腦的所有使用者生效，本工具不會自動移除。
 11. Apply-StartMenuSettings：清空釘選、隱藏推薦及全部應用程式分類區；保留搜尋、帳號和電源。程式本體仍可搜尋啟動。
 12. Apply-DisplaySettings：1920×1080、標準原生100%縮放，關閉自訂縮放。
 13. Apply-DesktopSettings：清空普通桌面項目，顯示本機、網路、控制台、資源回收筒。

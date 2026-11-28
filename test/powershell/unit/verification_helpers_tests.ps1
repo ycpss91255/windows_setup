@@ -37,6 +37,7 @@ function Get-ItemProperty {param($Path,$ErrorAction)
  $values=@{AutoAdminLogon='1';DefaultUserName=$env:USERNAME;SearchOnTaskbarMode=0;AllowNewsAndInterests=0;ShowTaskViewButton=0;Hidden=1;ShowSuperHidden=0}
  foreach($id in @('{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}','{20D04FE0-3AEA-1069-A2D8-08002B30309D}','{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}','{645FF040-5081-101B-9F08-00AA002F954E}')){$values[$id]=0}
  if($global:AggregateFixtureMode -like 'Autologon*'){$values.AutoAdminLogon='0'}
+ if($global:AggregateFixtureMode -like 'TaskView*'){$values.ShowTaskViewButton=1;if($global:AggregateFixtureMode -eq 'TaskViewMachinePolicy'){$values.HideTaskViewButton=1}}
  if($global:AggregateFixtureMode -eq 'Throw'){$values.Hidden=0;$values.AutoAdminLogon='0';$values.NUC8FinalizeTaskbar='pending';$values['{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}']=1}
  [pscustomobject]$values
 }
@@ -77,6 +78,14 @@ try{
   $desktopResult=Get-Content (Resolve-NucPath 'Verification-Result.json') -Raw|ConvertFrom-Json
   $desktopDriver=@($desktopResult.Checks|Where-Object Name -eq '已選驅動官方目標')
   Assert ($desktopDriver.Count -eq 1 -and $desktopDriver[0].Status -eq 'Passed') ('桌面專屬案例不應誤造驅動失敗 '+$desktopMode)
+ }
+ # #485：個人 ShowTaskViewButton 受系統保護時，工作列模組改寫機器原則 HideTaskViewButton；最終驗收以同一讀回條件判定。
+ foreach($taskViewMode in @('TaskViewMachinePolicy','TaskViewNone')){
+  $global:AggregateFixtureMode=$taskViewMode
+  if($taskViewMode -eq 'TaskViewMachinePolicy'){Invoke-SetupVerification -Hardware $hardware -DriverPackagePath $fixture -VerificationRunId ([guid]::NewGuid().ToString())|Out-Null}else{Reject {Invoke-SetupVerification -Hardware $hardware -DriverPackagePath $fixture -VerificationRunId ([guid]::NewGuid().ToString())} '個人值與機器原則都未隱藏工作檢視按鈕時拒絕總成功'}
+  $taskViewResult=Get-Content (Resolve-NucPath 'Verification-Result.json') -Raw|ConvertFrom-Json
+  $taskViewCheck=@($taskViewResult.Checks|Where-Object Name -eq '工作檢視按鈕隱藏')
+  Assert ($taskViewCheck.Count -eq 1 -and $taskViewCheck[0].Passed -eq ($taskViewMode -eq 'TaskViewMachinePolicy') -and $taskViewCheck[0].Detail.Contains('HideTaskViewButton')) ('工作檢視按鈕驗收接受機器原則讀回並如實列出來源 '+$taskViewMode)
  }
  foreach($guiMode in @('NoDisplay','UntypedGui')){
   $global:AggregateFixtureMode=$guiMode

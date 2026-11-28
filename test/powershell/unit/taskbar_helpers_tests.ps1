@@ -9,7 +9,7 @@ function Invoke-SetupTaskbarNativeAutoHide {param([string]$ModuleRoot,[bool]$App
 function Get-SetupTaskbarPersistedAutoHide {return $true}
 function Set-SetupTaskbarPersistedAutoHide {}
 $temp=Join-Path ([IO.Path]::GetTempPath()) ('taskbar_leaf_'+[guid]::NewGuid().ToString('N'));[void][IO.Directory]::CreateDirectory($temp)
-$script:createdKeys=@();$script:missingKeys=$true;$script:writes=@();$script:values=@{SearchOnTaskbarMode=0;TaskbarDa=0;ShowTaskViewButton=0;AllowNewsAndInterests=0};$script:pending=$true;$script:backups=0;$script:removed=@();$script:delays=@()
+$script:createdKeys=@();$script:missingKeys=$true;$script:writes=@();$script:values=@{};$script:pending=$true;$script:backups=0;$script:removed=@();$script:delays=@()
 function Test-Path {param($Path,$LiteralPath,$PathType) if($Path -like 'HK*'){return (-not $script:missingKeys)};Microsoft.PowerShell.Management\Test-Path @PSBoundParameters}
 function New-Item {param($Path,[switch]$Force) if($Path -notlike 'HK*' -or -not $Force){throw 'unexpected Taskbar key creation'};$script:createdKeys+=@($Path)}
 function New-ItemProperty {param($Path,$Name,$Value,$PropertyType,[switch]$Force) if($Path -notlike 'HK*' -or -not $Force){throw 'unexpected Taskbar registry write'};$script:writes+=@($Name);if($script:blockPersonalWidgets -and $Name -eq 'TaskbarDa'){throw 'fixture protected personal widgets'};if($Name -notin @($script:discardNames)){$script:values[$Name]=$Value}}
@@ -26,6 +26,8 @@ $before=$script:writes.Count;$r=Invoke-SetupTaskbarSettings -OutputRoot $temp -L
 Assert (-not $r.Success -and $r.RequiresNextSignIn -and $script:writes.Count -eq $before -and $script:backups -eq 1) 'Taskbar readonly verification cannot claim pending RunOnce is complete'
 $script:pending=$false;$script:values.Remove('StartLayoutFile');$script:values.Remove('LockedStartLayout');$r=Invoke-SetupTaskbarSettings -OutputRoot $temp -LayoutPath $layout -VerifyOnly
 Assert ($r.Success -and -not $r.RequiresNextSignIn -and $script:writes.Count -eq $before) 'Taskbar readonly verification accepts current preferences after temporary policy cleanup'
+$before=$script:writes.Count;$r=Invoke-SetupTaskbarSettings -OutputRoot $temp -LayoutPath $layout
+Assert ($r.Success -and (@($script:writes|Select-Object -Skip $before) -join ',') -ceq 'StartLayoutFile,LockedStartLayout') 'Taskbar rerun rewrites only the cleaned-up temporary layout policy and skips preferences already at target'
 function Start-Sleep {param($Seconds) $script:delays+=@($Seconds)}
 function Remove-ItemProperty {param($Path,$Name,$ErrorAction) if($Path -ne 'HKCU:\Software\Policies\Microsoft\Windows\Explorer'){throw 'unexpected finalize path'};$script:removed+=@($Name);if(-not $script:denyRemoval){$script:values.Remove($Name)}}
 $script:values.StartLayoutFile=$layout

@@ -1,0 +1,40 @@
+{
+  "Source": "issue #485：已完成設定的電腦重跑 windows.cmd 前的實機唯讀讀回（程序完整性層級 High）",
+  "IntegrityLevel": "High",
+  "Keys": [
+    {
+      "Path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\explorer\\Advanced",
+      "Acl": { "Administrators": "FullControl", "CurrentUser": "FullControl" },
+      "Values": { "ShowTaskViewButton": 0 },
+      "Absent": [ "TaskbarDa" ]
+    },
+    {
+      "Path": "HKCU:\\Software\\Policies\\Microsoft\\Windows\\Explorer",
+      "Acl": { "Administrators": "FullControl", "CurrentUser": "ReadKey" },
+      "Values": {},
+      "Absent": [ "StartLayoutFile", "LockedStartLayout" ]
+    },
+    {
+      "Path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search",
+      "Acl": { "Administrators": "FullControl" },
+      "Values": { "SearchOnTaskbarMode": 0 },
+      "Absent": []
+    },
+    {
+      "Path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Dsh",
+      "Acl": { "Administrators": "FullControl" },
+      "Values": { "AllowNewsAndInterests": 0 },
+      "Absent": []
+    }
+  ],
+  "ObservedDenials": [
+    { "Path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\explorer\\Advanced", "Name": "TaskbarDa", "Message": "嘗試執行未經授權的作業。" },
+    { "Path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Dsh", "Name": "AllowNewsAndInterests", "Message": "嘗試執行未經授權的作業。", "ConfirmedOnDevice": "以 High 完整性系統管理員 PowerShell 寫入與現值相同的 0，拋出 UnauthorizedAccessException；讀回 ACL 為 Administrators FullControl" }
+  ],
+  "ConfirmedSameValueWritesOk": [
+    { "Path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\explorer\\Advanced", "Name": "ShowTaskViewButton" },
+    { "Path": "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search", "Name": "SearchOnTaskbarMode" },
+    { "Path": "HKCU:\\Software\\Policies\\Microsoft\\Windows\\Explorer", "Name": "(新增後刪除的測試值)" }
+  ],
+  "UnattributedDenialMessage": "嘗試執行未經授權的作業。"
+}

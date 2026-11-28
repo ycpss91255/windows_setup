@@ -99,7 +99,8 @@ Add-Check '搜尋欄隱藏原則' ($null -ne $search.SearchOnTaskbarMode -and $s
 $widgets=Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Dsh' -ErrorAction SilentlyContinue
 Add-Check '天氣/小工具關閉原則' ($null -ne $widgets.AllowNewsAndInterests -and $widgets.AllowNewsAndInterests -eq 0) ('AllowNewsAndInterests：'+$widgets.AllowNewsAndInterests)
 $advanced=Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\explorer\Advanced' -ErrorAction SilentlyContinue
-Add-Check '工作檢視按鈕隱藏' ($null -ne $advanced.ShowTaskViewButton -and $advanced.ShowTaskViewButton -eq 0) ('ShowTaskViewButton：'+$advanced.ShowTaskViewButton)
+$taskViewPolicy=(Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' -ErrorAction SilentlyContinue).HideTaskViewButton
+Add-Check '工作檢視按鈕隱藏' (($null -ne $advanced.ShowTaskViewButton -and $advanced.ShowTaskViewButton -eq 0) -or ($null -ne $taskViewPolicy -and $taskViewPolicy -eq 1)) ('ShowTaskViewButton：'+$advanced.ShowTaskViewButton+'；機器原則 HideTaskViewButton：'+$taskViewPolicy)
 Add-SetupTaskbarVerificationChecks -PackageRoot $script:NucPackageRoot
 try{
  $fresh=Invoke-SetupGuiFreshVerification -PackageRoot $script:NucPackageRoot -Role Display
