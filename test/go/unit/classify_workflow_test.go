@@ -26,6 +26,7 @@ func TestPullRequestClassifyGatesOnlyDeclaredHeavyJobs(t *testing.T) {
 		"managed-coverage":        "select_coverage_aggregation",
 		"requirements-gate":       "select_requirements_gate",
 		"docker-tests":            "select_docker_tests",
+		"docker-test-shards":      "select_docker_tests",
 		"go-tests":            "select_go_tests",
 		"oobe_payload_inspection": "select_oobe_payload",
 	}

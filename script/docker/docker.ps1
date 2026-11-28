@@ -1,11 +1,13 @@
 ﻿#Requires -Version 5.1
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][ValidateSet('doctor','build','test','test-built','shell')][string]$Action,[string]$ReportDirectory,[ValidateSet('process','hyperv')][string]$Isolation='process',[string]$BuildReceiptPath)
+param([Parameter(Mandatory=$true)][ValidateSet('doctor','build','test','test-built','shell')][string]$Action,[string]$ReportDirectory,[ValidateSet('process','hyperv')][string]$Isolation='process',[string]$BuildReceiptPath,[int]$ShardIndex=0,[int]$ShardCount=1)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'library.ps1')
 $previous=@{}
 $runtimePath=$null
 try {
+ # 分片在呼叫 docker 前先核對，避免無效分片被容器入口靜默改成完整或空白執行。
+ if($ShardCount -lt 1 -or $ShardCount -gt 6 -or $ShardIndex -lt 0 -or $ShardIndex -ge $ShardCount){throw ('容器測試分片超出範圍：'+$ShardIndex+'/'+$ShardCount)}
  $context=Get-ContainerContext -Root (Join-Path $PSScriptRoot '../..') -ReportDirectory $ReportDirectory -Isolation $Isolation
  if(-not(Get-Command docker.exe -ErrorAction SilentlyContinue)){throw 'Docker is not installed or not on PATH. No host configuration was changed.'}
  $info=Invoke-ContainerDocker -Arguments @('info','--format','{{json .}}')
@@ -14,7 +16,7 @@ try {
  Invoke-ContainerDocker -Arguments @('version')
  Invoke-ContainerDocker -Arguments @('compose','version')
  if($Action -eq 'doctor'){Write-Host 'Windows Docker engine detected. This is a prerequisite check, not a test pass.';exit 0}
- $settings=@{WINDOWS_SETUP_SOURCE=$context.Root;WINDOWS_SETUP_REPORTS=$context.Reports;WINDOWS_SETUP_IMAGE=$context.Image;WINDOWS_SETUP_ISOLATION=$context.Isolation}
+ $settings=@{WINDOWS_SETUP_SOURCE=$context.Root;WINDOWS_SETUP_REPORTS=$context.Reports;WINDOWS_SETUP_IMAGE=$context.Image;WINDOWS_SETUP_ISOLATION=$context.Isolation;WINDOWS_SETUP_SHARD_INDEX=$ShardIndex;WINDOWS_SETUP_SHARD_COUNT=$ShardCount}
  foreach($key in $settings.Keys){$previous[$key]=[Environment]::GetEnvironmentVariable($key,'Process');[Environment]::SetEnvironmentVariable($key,$settings[$key],'Process')}
  $compose=@('compose','--project-name',$context.Project,'--file',(Join-Path $context.Root 'compose.yaml'))
  $configuration=(Invoke-ContainerDocker -Arguments ($compose+@('config','--format','json'))) -join "`n"

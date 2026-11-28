@@ -15,13 +15,13 @@ func TestDockerBuildAndFullTestHaveIndependentBoundedBudgets(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := string(b)
-	start := strings.Index(w, "  docker-tests:")
+	start := strings.Index(w, "  docker-test-shards:")
 	if start < 0 {
 		t.Fatal("required Docker job was removed")
 	}
-	end := strings.Index(w[start:], "\n  ci-rollup:")
+	end := strings.Index(w[start:], "\n  docker-tests:")
 	if start < 0 || end < 0 {
-		t.Fatal("Docker job and required rollup must remain")
+		t.Fatal("Docker shard job and its required merge gate must remain")
 	}
 	job := w[start : start+end]
 	ready := strings.Index(job, "script\\docker\\runner_daemon.ps1")
@@ -60,9 +60,14 @@ func TestDockerBuildAndFullTestHaveIndependentBoundedBudgets(t *testing.T) {
 	if !strings.Contains(job, "'-Action','build'") || !strings.Contains(job, "'-Action','test-built'") || strings.Count(job, "windows-container-image.json") != 4 {
 		t.Fatal("separate full-test phase must consume the exact build receipt without rebuilding or skipping image identity")
 	}
-	for _, required := range []string{"Assert-CIDockerFailure", "Assert-CIContainerReport", "requirements_gate", "retention-days: 7"} {
+	for _, required := range []string{"Assert-CIDockerFailure", "Assert-CIContainerReport", "retention-days: 7"} {
 		if !strings.Contains(job, required) {
 			t.Fatalf("original Docker gate removed: %s", required)
 		}
+	}
+	mergeStart := strings.Index(w, "\n  docker-tests:")
+	mergeEnd := strings.Index(w[mergeStart+1:], "\n  ci-rollup:")
+	if mergeStart < 0 || mergeEnd < 0 || !strings.Contains(w[mergeStart:mergeStart+1+mergeEnd], "requirements_gate") {
+		t.Fatal("original Docker gate removed: requirements_gate must validate the merged container report")
 	}
 }

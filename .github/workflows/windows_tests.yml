@@ -83,6 +83,8 @@ jobs:
       select_go_tests: ${{ steps.classify.outputs.select_go_tests || steps.fallback.outputs.select_go_tests || 'false' }}
       shard_count: ${{ steps.classify.outputs.shard_count || steps.fallback.outputs.shard_count || '1' }}
       shard_matrix: ${{ steps.classify.outputs.shard_matrix || steps.fallback.outputs.shard_matrix || '[0]' }}
+      docker_shard_count: ${{ steps.docker_shards.outputs.docker_shard_count }}
+      docker_shard_matrix: ${{ steps.docker_shards.outputs.docker_shard_matrix }}
       pr_full: ${{ steps.classify.outputs.pr_full || steps.fallback.outputs.pr_full || 'false' }}
       test_scope: ${{ steps.classify.outputs.test_scope || steps.fallback.outputs.test_scope }}
       affected_tests: ${{ steps.classify.outputs.affected_tests }}
@@ -105,6 +107,16 @@ jobs:
         run: |
           . ./script/test/ci_classify_smoke.ps1
           Invoke-CIClassifierSmoke -ClassifierPath ./script/test/ci_classify.ps1 | Out-Null
+      - name: 依 repo 變數決定容器測試分片數（與變更分類無關）
+        id: docker_shards
+        shell: pwsh
+        env:
+          DOCKER_SHARDS: ${{ vars.DOCKER_SHARDS }}
+        run: |
+          . ./script/test/container_shards.ps1
+          $plan = Get-CIContainerShardPlan -Value $env:DOCKER_SHARDS
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value @(('docker_shard_count=' + $plan.Count), ('docker_shard_matrix=' + $plan.Matrix))
+          Write-Host ('容器測試分片數 = ' + $plan.Count + '：' + $plan.Matrix)
       - name: 以基底版本的規則依 diff 選出受影響的工作
         id: classify
         continue-on-error: true
@@ -556,12 +568,16 @@ jobs:
           go run ./script/test/requirements_gate --require-runtime --artifact-dir acceptance-artifact --source-root . --expected-sha "$EXPECTED_SHA" --expected-run-url "$EXPECTED_RUN_URL"
           go run ./script/test/repo_coverage_tool verify --runtime --artifact-dir acceptance-artifact --source-root . --expected-sha "$EXPECTED_SHA" --expected-run-url "$EXPECTED_RUN_URL" --require-complete --minimum-percent 80
 
-  docker-tests:
+  docker-test-shards:
     needs: [source-preflight, classify]
     if: needs.classify.outputs.select_docker_tests == 'true'
-    name: docker-tests
+    name: docker-tests 分片 ${{ matrix.shard }}
     runs-on: windows-2022
     timeout-minutes: 125
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.classify.outputs.docker_shard_matrix) }}
     defaults:
       run:
         shell: pwsh
@@ -595,11 +611,14 @@ jobs:
           $context = Get-ContainerContext -Root $env:GITHUB_WORKSPACE -ReportDirectory (Join-Path $env:RUNNER_TEMP 'health-probe-unused') -Isolation process
           $image = Assert-ContainerBuildReceipt -Context $context -Path (Join-Path $env:RUNNER_TEMP 'windows-container-image.json')
           Invoke-CIContainerHealthVerification -ImageId $image
-      - name: 在已核對映像執行全部 Windows 隔離測試
+      - name: 在已核對映像執行本分片的 Windows 隔離測試
         timeout-minutes: 35
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+          SHARD_COUNT: ${{ needs.classify.outputs.docker_shard_count }}
         run: |
           . .\script\test\ci_tasks.ps1
-          Invoke-CINative -File powershell.exe -Arguments @('-NoProfile','-ExecutionPolicy','Bypass','-File','.\script\docker\docker.ps1','-Action','test-built','-Isolation','process','-BuildReceiptPath',(Join-Path $env:RUNNER_TEMP 'windows-container-image.json'),'-ReportDirectory',(Join-Path $env:RUNNER_TEMP 'windows-container-results'))
+          Invoke-CINative -File powershell.exe -Arguments @('-NoProfile','-ExecutionPolicy','Bypass','-File','.\script\docker\docker.ps1','-Action','test-built','-Isolation','process','-BuildReceiptPath',(Join-Path $env:RUNNER_TEMP 'windows-container-image.json'),'-ReportDirectory',(Join-Path $env:RUNNER_TEMP 'windows-container-results'),'-ShardIndex',$env:SHARD_INDEX,'-ShardCount',$env:SHARD_COUNT)
       - name: 證明真實容器失敗會保留非零退出碼
         timeout-minutes: 5
         run: |
@@ -608,9 +627,77 @@ jobs:
           $context = Get-ContainerContext -Root $env:GITHUB_WORKSPACE -ReportDirectory (Join-Path $env:RUNNER_TEMP 'failure-probe-unused') -Isolation process
           $image = Assert-ContainerBuildReceipt -Context $context -Path (Join-Path $env:RUNNER_TEMP 'windows-container-image.json')
           Assert-CIDockerFailure -Image $image
-      - name: 驗證容器真實報告與來源
+      - name: 驗證分片報告來自實際 Windows 容器
         timeout-minutes: 5
         if: always()
+        run: |
+          $public = Join-Path $env:RUNNER_TEMP 'windows-container-results/public'
+          . .\script\test\ci_tasks.ps1
+          Assert-CIContainerReport -Directory $public
+      - name: 保留本分片容器去識別報告七天供合併
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: docker-shard-reports-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/windows-container-results/public/
+            ${{ runner.temp }}/windows-container-results/shard.json
+          retention-days: 7
+          if-no-files-found: error
+
+  docker-tests:
+    # 必要檢查名稱維持 docker-tests：任一分片失敗、缺少或被略過都不能通過；
+    # 容器內 Go 驗收由第 0 份完成；合併後的完整容器報告沿用原附件名稱，供需求閘門、發布與品質索引使用。
+    needs: [source-preflight, classify, docker-test-shards]
+    if: always() && needs.classify.outputs.select_docker_tests == 'true'
+    name: docker-tests
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: 取得容器測試來源
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: 準備固定 Go 工具鏈
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: 確認全部容器分片成功
+        env:
+          SHARDS_RESULT: ${{ needs.docker-test-shards.result }}
+        run: |
+          . .\script\test\container_shards.ps1
+          Assert-CIContainerShardsResult -Result $env:SHARDS_RESULT
+      - name: 下載同次全部容器分片報告
+        if: always()
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: docker-shard-reports-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: ${{ runner.temp }}/docker-shards
+      - name: 核對分片互不重疊且聯集完整後合併成完整容器報告
+        if: always()
+        timeout-minutes: 5
+        env:
+          SHARD_COUNT: ${{ needs.classify.outputs.docker_shard_count }}
+        run: |
+          . .\script\test\container_shards.ps1
+          $null = Merge-CIContainerShardReports -ShardRoot (Join-Path $env:RUNNER_TEMP 'docker-shards') -ShardCount ([int]$env:SHARD_COUNT) -PackageRoot $PWD.Path -OutputDirectory (Join-Path $env:RUNNER_TEMP 'windows-container-results/public')
+          Get-Content (Join-Path $env:RUNNER_TEMP 'windows-container-results/public/summary.md') -Encoding UTF8 | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding UTF8
+      - name: 僅保留合併後的容器去識別報告七天
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: docker-test-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/windows-container-results/public/
+          retention-days: 7
+          if-no-files-found: error
+      - name: 驗證合併後容器報告與來源
+        timeout-minutes: 5
         env:
           EXPECTED_SHA: ${{ github.sha }}
           EXPECTED_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -619,14 +706,6 @@ jobs:
           . .\script\test\ci_tasks.ps1
           Assert-CIContainerReport -Directory $public
           Invoke-CINative -File go.exe -Arguments @('run','./script/test/requirements_gate','--tests-only','--artifact-dir',$public,'--source-root','.','--expected-sha',$env:EXPECTED_SHA,'--expected-run-url',$env:EXPECTED_RUN_URL)
-      - name: 僅保留容器去識別報告七天
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: docker-test-reports-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/windows-container-results/public/
-          retention-days: 7
-          if-no-files-found: error
 
   ci-rollup:
     name: ci-rollup
